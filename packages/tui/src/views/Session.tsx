@@ -288,6 +288,17 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
                     });
                 }
                 replaying = false;
+                // History only contains persistent events — session.idle is
+                // ephemeral, so replaying always leaves us in whatever phase
+                // the last turn ended in (typically "thinking" from
+                // assistant.turn_end). Snap back to idle so the spinner
+                // doesn't claim the agent is still working.
+                setStatus((prev) => ({
+                    ...prev,
+                    phase: { kind: "idle" },
+                    since: Date.now(),
+                    streamBytes: 0,
+                }));
                 // Drain any live events that arrived during the fetch.
                 while (buffered.length > 0) {
                     const msg = buffered.shift()!;
