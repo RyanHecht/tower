@@ -392,18 +392,25 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
                 /* Prompt — only left + right verticals, no top/bottom border. */
                 <box
                     style={{
-                        border: ["left", "right"],
+                        border: ["top", "bottom"],
                         borderColor: "gray",
                         paddingLeft: 1,
                         paddingRight: 1,
+                        flexDirection: "row",
                         minHeight: 3,
                     }}
                 >
+                    <box style={{ width: 2, paddingTop: 0 }}>
+                        <text>
+                            <span fg="cyan" attributes={1}>❯</span>
+                        </text>
+                    </box>
                     <textarea
                         ref={textareaRef as never}
                         focused
                         placeholder="Type a message — enter to send, shift/alt+enter for newline, esc to detach, ctrl+c to abort"
                         keyBindings={textareaBindings as never}
+                        style={{ flexGrow: 1 } as never}
                     />
                 </box>
             )}

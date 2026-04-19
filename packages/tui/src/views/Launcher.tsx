@@ -306,20 +306,27 @@ export function Launcher({ client, routerSessionId, lastSessionId, onOpen, onQui
 
             <box
                 style={{
-                    border: ["left", "right"],
+                    border: ["top", "bottom"],
                     borderColor: focus === "input" ? "cyan" : "gray",
                     paddingLeft: 1,
                     paddingRight: 1,
+                    flexDirection: "row",
                     height: 3,
                     marginTop: 1,
                 }}
             >
+                <box style={{ width: 2 }}>
+                    <text>
+                        <span fg={focus === "input" ? "cyan" : "gray"} attributes={1}>❯</span>
+                    </text>
+                </box>
                 <input
                     focused={focus === "input"}
                     placeholder={`Type to start a new session, or "${ROUTER_PREFIX} …" to ask the router`}
                     value={input}
                     onInput={setInput as never}
                     onSubmit={onInputSubmit as never}
+                    style={{ flexGrow: 1 } as never}
                 />
             </box>
 
