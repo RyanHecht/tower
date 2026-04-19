@@ -414,7 +414,9 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
         const frame = SPINNER_FRAMES[Math.floor(now / 80) % SPINNER_FRAMES.length];
         let label = "thinking";
         let detail: string | undefined;
-        let color = "yellow";
+        // Default to the assistant accent color so thinking/intent reads
+        // as the same "voice" as the assistant's message bubbles.
+        let color = "#7dd3fc";
         switch (status.phase.kind) {
             case "thinking":
                 detail = status.phase.detail;
@@ -427,7 +429,7 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
             case "streaming":
                 label = "streaming";
                 detail = status.lastIntent;
-                color = "cyan";
+                color = "#7dd3fc";
                 break;
             case "tool":
                 label = `tool: ${status.phase.name}`;
