@@ -1,7 +1,9 @@
 import type { WebSocket } from "ws";
 import type { CopilotSession, PermissionRequest, SessionEvent } from "@github/copilot-sdk";
+import type { Inbound, PermissionMode } from "@tower/protocol";
+import { isPermissionMode, FORWARDED_EVENT_TYPES } from "@tower/protocol";
 import { getCopilotClient } from "./copilot.js";
-import { buildPolicy, isPermissionMode, type PermissionMode, type PermissionPolicy } from "./permissions.js";
+import { buildPolicy, type PermissionPolicy } from "./permissions.js";
 import { parseRules, RuleParseError, type ParsedRule } from "./rules.js";
 import { resolveWorkspace } from "./workspaces.js";
 import { verifyToken, type VerifiedToken } from "./tokens.js";
@@ -13,35 +15,6 @@ interface InboundBase {
     id?: string | number;
 }
 
-type Inbound =
-    | { type: "hello"; token: string }
-    | {
-          type: "session.create";
-          id: string | number;
-          workspace: string;
-          model?: string;
-          permissionMode?: string;
-          allow?: string[];
-          deny?: string[];
-          keepAlive?: unknown;
-      }
-    | {
-          type: "session.resume";
-          id: string | number;
-          sessionId: string;
-          permissionMode?: string;
-          allow?: string[];
-          deny?: string[];
-          keepAlive?: unknown;
-      }
-    | { type: "session.list"; id: string | number }
-    | { type: "session.send"; sessionId: string; prompt: string }
-    | { type: "session.abort"; sessionId: string }
-    | { type: "session.keepAlive"; id: string | number; sessionId: string; keepAlive: unknown }
-    | { type: "session.delete"; id: string | number; sessionId: string }
-    | { type: "permission.reply"; requestId: string; decision: "approve" | "deny" }
-    | { type: "router.ask"; id: string | number; prompt: string };
-
 interface AttachedSession {
     session: CopilotSession;
     policy: PermissionPolicy;
@@ -49,18 +22,7 @@ interface AttachedSession {
     unsubscribers: Array<() => void>;
 }
 
-const FORWARDED_EVENTS = [
-    "assistant.message",
-    "assistant.message_delta",
-    "assistant.reasoning",
-    "assistant.reasoning_delta",
-    "tool.execution_start",
-    "tool.execution_complete",
-    "session.idle",
-    "session.error",
-    "session.warning",
-    "session.info",
-] as const;
+const FORWARDED_EVENTS = FORWARDED_EVENT_TYPES;
 
 export function handleConnection(ws: WebSocket, remote: string, router: Router | null, keepAlive: KeepAliveManager): void {
     let auth: VerifiedToken | null = null;

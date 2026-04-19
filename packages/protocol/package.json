@@ -9,6 +9,9 @@
     "build": "tsc -b",
     "typecheck": "tsc -b"
   },
+  "dependencies": {
+    "@github/copilot-sdk": "^0.1.0"
+  },
   "devDependencies": {
     "@types/node": "^22.0.0"
   }

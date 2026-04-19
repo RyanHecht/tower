@@ -1,23 +1,8 @@
 import type { CopilotClient } from "@github/copilot-sdk";
+import type { KeepAlivePolicy } from "@tower/protocol";
 import type { StateStore } from "./state.js";
 
-/**
- * Keep-alive policy chosen by the client per session.
- *
- *   default          — rely on the CLI daemon's built-in 30-minute idle reaper
- *                      (gateway does nothing).
- *   forever          — gateway pings every PING_INTERVAL_MS so the CLI reaper
- *                      never fires; only `session.delete` (or daemon restart)
- *                      ends the session.
- *   { idleMs: N }    — gateway enforces its own idle window of N ms. Activity
- *                      = any `session.send` from any client. If N exceeds the
- *                      CLI's reap interval, the gateway also pings to keep
- *                      the upstream timer fresh until *its* expiry fires.
- */
-export type KeepAlivePolicy =
-    | { kind: "default" }
-    | { kind: "forever" }
-    | { kind: "idle"; idleMs: number };
+export type { KeepAlivePolicy } from "@tower/protocol";
 
 /** How often we ping the daemon to defeat its idle reaper. */
 const PING_INTERVAL_MS = 25 * 60 * 1000;
