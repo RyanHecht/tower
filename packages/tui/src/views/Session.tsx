@@ -278,6 +278,9 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
         setStatus((prev) => ({ ...prev, phase: { kind: "thinking" }, since: Date.now() }));
     };
 
+    const [inputRows, setInputRows] = useState(1);
+    const MAX_INPUT_ROWS = 10;
+
     // Wire up textarea submit imperatively — the React wrapper doesn't bridge
     // onSubmit for the textarea, so we set the listener via the ref and pull
     // the buffer's contents on demand.
@@ -294,13 +297,24 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
                 ta.setText(text.slice(0, -1));
                 ta.cursorOffset = text.length - 1;
                 (ta as unknown as { newLine: () => void }).newLine();
+                setInputRows(Math.min(MAX_INPUT_ROWS, ta.lineCount));
                 return;
             }
             if (!text.trim()) return;
             sendPrompt(text);
             ta.setText("");
+            setInputRows(1);
         };
-        return () => { ta.onSubmit = undefined; };
+        // Track content height so the prompt frame grows in lock-step with
+        // the buffer (Yoga's measure-func cache otherwise lags by one line,
+        // making the box appear to grow only every other newline).
+        ta.onContentChange = () => {
+            setInputRows(Math.min(MAX_INPUT_ROWS, Math.max(1, ta.lineCount)));
+        };
+        return () => {
+            ta.onSubmit = undefined;
+            ta.onContentChange = undefined;
+        };
         // sendPrompt closes over sessionId via Props; re-bind whenever that changes.
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId]);
@@ -408,7 +422,7 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
                     onAnswer={answerPermission}
                 />
             ) : (
-                /* Prompt — only left + right verticals, no top/bottom border. */
+                /* Prompt — only top + bottom borders, height tracks content. */
                 <box
                     style={{
                         border: ["top", "bottom"],
@@ -416,7 +430,7 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
                         paddingLeft: 1,
                         paddingRight: 1,
                         flexDirection: "row",
-                        minHeight: 3,
+                        height: inputRows + 2,
                     }}
                 >
                     <box style={{ width: 2, paddingTop: 0 }}>
