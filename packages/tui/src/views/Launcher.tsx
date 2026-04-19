@@ -317,7 +317,7 @@ export function Launcher({ client, routerSessionId, lastSessionId, onOpen, onQui
             >
                 <box style={{ width: 2 }}>
                     <text>
-                        <span fg={focus === "input" ? "cyan" : "gray"} attributes={1}>❯</span>
+                        <span fg="white" attributes={1}>❯</span>
                     </text>
                 </box>
                 <input

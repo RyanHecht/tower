@@ -65,9 +65,9 @@ interface HeaderSpec {
 const headerFor = (entry: TimelineEntry): HeaderSpec | null => {
     switch (entry.kind) {
         case "user":      return null; // rendered inline with ❯ prefix
-        case "assistant": return { glyph: "●", color: "yellow"  };
-        case "intent":    return { glyph: "●", color: "yellow"  };
-        case "reasoning": return null; // rendered as bare italicised text
+        case "assistant": return { glyph: "●", color: "#7dd3fc" }; // sky-300
+        case "intent":    return { glyph: "●", color: "#7dd3fc" };
+        case "reasoning": return { glyph: "○", color: "gray"    };
         case "tool": {
             switch (entry.status) {
                 case "ok":      return { glyph: "●", color: "green" };
@@ -95,21 +95,26 @@ const Entry = ({ entry, isFirst }: EntryProps) => {
         return (
             <box style={{ flexDirection: "column", marginTop }}>
                 <text>
-                    <span fg="cyan" attributes={1}>❯ </span>
+                    <span fg="white" attributes={1}>❯ </span>
                     <span fg="white" attributes={1}>{entry.text}</span>
                 </text>
             </box>
         );
     }
 
-    // Reasoning — render as bare italic gray text with no header at all.
+    // Reasoning — outlined circle + italic gray text inline.
     if (entry.kind === "reasoning") {
         return (
-            <box style={{ flexDirection: "column", marginTop }}>
-                <text fg="gray">
-                    <i>{entry.text}</i>
-                    {entry.streaming ? <span fg="gray"> ▍</span> : null}
-                </text>
+            <box style={{ flexDirection: "row", marginTop }}>
+                <box style={{ width: 2 }}>
+                    <text><span fg="gray">○</span></text>
+                </box>
+                <box style={{ flexGrow: 1 }}>
+                    <text fg="gray">
+                        <i>{entry.text}</i>
+                        {entry.streaming ? <span fg="gray"> ▍</span> : null}
+                    </text>
+                </box>
             </box>
         );
     }
@@ -141,14 +146,16 @@ const Entry = ({ entry, isFirst }: EntryProps) => {
         );
     }
 
-    // Assistant message — header dot followed by Markdown body indented under it.
+    // Assistant message — circle and markdown share a row; markdown wraps
+    // under itself to the right of the circle so the first line sits on the
+    // same line as the dot.
     if (entry.kind === "assistant") {
         return (
-            <box style={{ flexDirection: "column", marginTop }}>
-                <text>
-                    <span fg={header.color} attributes={1}>{header.glyph}</span>
-                </text>
-                <box style={{ paddingLeft: 2 }}>
+            <box style={{ flexDirection: "row", marginTop }}>
+                <box style={{ width: 2 }}>
+                    <text><span fg={header.color} attributes={1}>{header.glyph}</span></text>
+                </box>
+                <box style={{ flexGrow: 1 }}>
                     {entry.text.length > 0 ? (
                         <markdown
                             content={entry.text}
@@ -161,7 +168,7 @@ const Entry = ({ entry, isFirst }: EntryProps) => {
         );
     }
 
-    // Assistant intent — single italic yellow line, no body.
+    // Assistant intent — single italic line in the header color.
     if (entry.kind === "intent") {
         return (
             <box style={{ flexDirection: "column", marginTop }}>
@@ -279,6 +286,16 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
         if (!ta) return;
         ta.onSubmit = () => {
             const text = ta.plainText;
+            // Backslash-continuation: if the buffer ends with "\", treat that
+            // as the user asking for a soft newline (Claude-Code style). Most
+            // terminals report shift+enter identically to enter, so this gives
+            // us a universal way to add another line.
+            if (text.endsWith("\\")) {
+                ta.setText(text.slice(0, -1));
+                ta.cursorOffset = text.length - 1;
+                (ta as unknown as { newLine: () => void }).newLine();
+                return;
+            }
             if (!text.trim()) return;
             sendPrompt(text);
             ta.setText("");
@@ -308,16 +325,18 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
         }
     });
 
-    // Textarea key bindings: enter submits, shift+enter inserts a newline.
-    // Many terminals can't actually report shift+enter, so we also accept
-    // alt+enter (meta+enter) as an alias — that's the convention most coding
-    // CLIs adopt.
+    // Textarea key bindings: enter submits, shift+enter / alt+enter / ctrl+j
+    // insert newlines. Many terminals report enter and shift+enter identically
+    // (both as plain "\r"), so we also support trailing-backslash continuation
+    // (handled in the submit handler below) as a universal fallback.
     const textareaBindings = useMemo(
         () => [
             { name: "return", action: "submit" as const },
-            { name: "linefeed", action: "submit" as const },
             { name: "return", shift: true, action: "newline" as const },
             { name: "return", meta: true, action: "newline" as const },
+            // ctrl+j arrives as a "linefeed" key which the textarea defaults
+            // already map to "newline" — no override needed. We just don't
+            // remap "linefeed" to submit.
         ],
         [],
     );
@@ -402,13 +421,13 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
                 >
                     <box style={{ width: 2, paddingTop: 0 }}>
                         <text>
-                            <span fg="cyan" attributes={1}>❯</span>
+                            <span fg="white" attributes={1}>❯</span>
                         </text>
                     </box>
                     <textarea
                         ref={textareaRef as never}
                         focused
-                        placeholder="Type a message — enter to send, shift/alt+enter for newline, esc to detach, ctrl+c to abort"
+                        placeholder='Type a message — enter to send; shift/alt+enter, ctrl+j, or trailing "\" for newline; esc to detach; ctrl+c to abort'
                         keyBindings={textareaBindings as never}
                         style={{ flexGrow: 1 } as never}
                     />
