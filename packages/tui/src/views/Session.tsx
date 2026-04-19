@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useKeyboard } from "@opentui/react";
+import { useKeyboard, useRenderer } from "@opentui/react";
 import type { TextareaRenderable } from "@opentui/core";
 import type { EventMessage, PermissionRequestMessage } from "@tower/protocol";
 import type { TowerClient } from "../client.js";
@@ -210,23 +210,47 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
     }, [status.phase.kind]);
 
     const apiRef = useRef<TimelineApi | null>(null);
+    const entriesRef = useRef<TimelineEntry[]>([]);
     if (apiRef.current === null) {
         apiRef.current = {
             nextId,
             push: (entry) => {
                 const id = nextId();
-                setEntries((prev) => [...prev, { ...entry, id }]);
+                setEntries((prev) => {
+                    const next = [...prev, { ...entry, id }];
+                    entriesRef.current = next;
+                    return next;
+                });
+                return id;
+            },
+            insertAt: (index, entry) => {
+                const id = nextId();
+                setEntries((prev) => {
+                    const i = Math.max(0, Math.min(index, prev.length));
+                    const next = [...prev.slice(0, i), { ...entry, id }, ...prev.slice(i)];
+                    entriesRef.current = next;
+                    return next;
+                });
                 return id;
             },
             update: (id, patch) => {
-                setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, ...patch } : e)));
+                setEntries((prev) => {
+                    const next = prev.map((e) => (e.id === id ? { ...e, ...patch } : e));
+                    entriesRef.current = next;
+                    return next;
+                });
             },
             append: (id, piece) => {
-                setEntries((prev) =>
-                    prev.map((e) => (e.id === id ? { ...e, text: e.text + piece } : e)),
-                );
+                setEntries((prev) => {
+                    const next = prev.map((e) =>
+                        e.id === id ? { ...e, text: e.text + piece } : e,
+                    );
+                    entriesRef.current = next;
+                    return next;
+                });
             },
             setStatus,
+            entryCount: () => entriesRef.current.length,
             maps: mapsRef.current,
         };
     }
@@ -333,6 +357,8 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
         setPending(null);
     };
 
+    const renderer = useRenderer();
+
     useKeyboard((key) => {
         if (pending) return;
         if (key.name === "escape") {
@@ -340,6 +366,22 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
             return;
         }
         if (key.ctrl && key.name === "c") {
+            // If the user has selected text (either inside the textarea or
+            // anywhere in the timeline), copy it to the system clipboard via
+            // OSC52 instead of aborting the turn.
+            const ta = textareaRef.current;
+            const taSel = ta?.hasSelection() ? ta.getSelectedText() : "";
+            const docSel =
+                renderer.hasSelection ? renderer.getSelection()?.getSelectedText() ?? "" : "";
+            const selected = taSel || docSel;
+            if (selected) {
+                renderer.copyToClipboardOSC52(selected);
+                apiRef.current!.push({
+                    kind: "info",
+                    text: `(copied ${selected.length} char${selected.length === 1 ? "" : "s"})`,
+                });
+                return;
+            }
             client.notify({ type: "session.abort", sessionId });
             apiRef.current!.push({ kind: "info", text: "(abort sent)" });
             setStatus((prev) => ({ ...prev, phase: { kind: "idle" }, since: Date.now() }));

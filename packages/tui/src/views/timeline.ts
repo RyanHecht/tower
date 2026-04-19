@@ -60,6 +60,14 @@ interface Maps {
     tools: Map<string, number>;
     /** toolCallId -> tool name (for status bar lookups after _complete arrives) */
     toolNames: Map<string, string>;
+    /**
+     * Number of entries at the start of the current assistant turn. Used to
+     * splice late-arriving reasoning entries in front of any assistant /
+     * tool entries that already streamed for this turn (the SDK sometimes
+     * delivers `assistant.reasoning_delta` after the message has begun
+     * streaming, which would otherwise show up out of order).
+     */
+    turnStart: number | null;
 }
 
 export const newMaps = (): Maps => ({
@@ -67,15 +75,20 @@ export const newMaps = (): Maps => ({
     reasonings: new Map(),
     tools: new Map(),
     toolNames: new Map(),
+    turnStart: null,
 });
 
 export interface TimelineApi {
     nextId: () => number;
     push: (entry: Omit<TimelineEntry, "id">) => number;
+    /** Insert at a specific index. Returns the new entry's id. */
+    insertAt: (index: number, entry: Omit<TimelineEntry, "id">) => number;
     update: (id: number, patch: Partial<Omit<TimelineEntry, "id">>) => void;
     /** Append `piece` to the existing text of the entry. */
     append: (id: number, piece: string) => void;
     setStatus: (s: AgentStatus | ((prev: AgentStatus) => AgentStatus)) => void;
+    /** Current entry count — used for ordering decisions in the reducer. */
+    entryCount: () => number;
     maps: Maps;
 }
 
@@ -114,6 +127,7 @@ export const applyEvent = (api: TimelineApi, event: SessionEvent): void => {
 
     switch (ev.type) {
         case "assistant.turn_start": {
+            maps.turnStart = api.entryCount();
             api.setStatus((prev) => ({
                 ...prev,
                 phase: { kind: "thinking", detail: prev.lastIntent },
@@ -146,8 +160,12 @@ export const applyEvent = (api: TimelineApi, event: SessionEvent): void => {
             if (!reasoningId || !piece) return;
             const existing = maps.reasonings.get(reasoningId);
             if (existing == null) {
-                const id = api.push({ kind: "reasoning", text: piece, streaming: true });
+                // Splice at the turn-start cutoff so reasoning shows above any
+                // assistant/tool entries that may have streamed first.
+                const at = maps.turnStart ?? api.entryCount();
+                const id = api.insertAt(at, { kind: "reasoning", text: piece, streaming: true });
                 maps.reasonings.set(reasoningId, id);
+                if (maps.turnStart != null) maps.turnStart = at + 1;
             } else {
                 api.append(existing, piece);
             }
@@ -165,8 +183,10 @@ export const applyEvent = (api: TimelineApi, event: SessionEvent): void => {
             if (!reasoningId) return;
             const existing = maps.reasonings.get(reasoningId);
             if (existing == null) {
-                const id = api.push({ kind: "reasoning", text: content, streaming: false });
+                const at = maps.turnStart ?? api.entryCount();
+                const id = api.insertAt(at, { kind: "reasoning", text: content, streaming: false });
                 maps.reasonings.set(reasoningId, id);
+                if (maps.turnStart != null) maps.turnStart = at + 1;
             } else {
                 api.update(existing, { text: content, streaming: false });
             }
