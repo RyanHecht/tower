@@ -39,13 +39,12 @@ export function App() {
                 } catch {
                     /* router may not be available; continue without the marker */
                 }
-                // If the user was last in a specific session, drop them straight
-                // back into it. Otherwise (or on first run) open the Launcher.
-                if (state.lastView === "session" && state.lastSessionId) {
-                    setView({ kind: "session", sessionId: state.lastSessionId });
-                } else {
-                    setView({ kind: "launcher" });
-                }
+                // Always open the launcher on a fresh launch — staying
+                // pinned to the last session was confusing because there's
+                // no obvious way to switch away. The launcher highlights
+                // the most recent session at the top so resuming is still
+                // one keystroke.
+                setView({ kind: "launcher" });
             })
             .catch((err) => {
                 setConnectError((err as Error).message);

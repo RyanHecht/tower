@@ -159,6 +159,16 @@ async function teardown(entry: AttachmentEntry): Promise<void> {
     for (const off of entry.sdkUnsubscribers) {
         try { off(); } catch { /* ignore */ }
     }
+    // Notify any subscribers still holding this entry that any pending
+    // prompts they may have on screen are now moot.
+    for (const pending of entry.policy.listPending()) {
+        fanout(entry, {
+            type: "permission.resolved",
+            requestId: pending.requestId,
+            sessionId: entry.sessionId,
+            reason: "cancelled",
+        });
+    }
     entry.policy.cancelAll();
     try { await entry.session.disconnect(); } catch { /* ignore */ }
 }
@@ -175,13 +185,24 @@ export async function forceDetach(sessionId: string): Promise<void> {
     await teardown(entry);
 }
 
-/** Answer a permission prompt regardless of which entry holds it. */
+/** Answer a permission prompt regardless of which entry holds it. Broadcasts
+ *  a `permission.resolved` frame to every subscriber on success so other
+ *  open dialogs (across reconnects, second TUI, etc.) can dismiss themselves. */
 export function answerPermission(
     requestId: string,
     decision: "approve" | "deny",
 ): boolean {
     for (const entry of entries.values()) {
-        if (entry.policy.answer(requestId, decision)) return true;
+        if (entry.policy.answer(requestId, decision)) {
+            fanout(entry, {
+                type: "permission.resolved",
+                requestId,
+                sessionId: entry.sessionId,
+                decision,
+                reason: "answered",
+            });
+            return true;
+        }
     }
     return false;
 }

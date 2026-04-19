@@ -6,6 +6,7 @@ import type {
     InboundType,
     Outbound,
     PermissionRequestMessage,
+    PermissionResolvedMessage,
     ResultMessage,
 } from "@tower/protocol";
 
@@ -115,6 +116,9 @@ export class TowerClient extends EventEmitter {
                 return;
             case "permission.request":
                 this.emit("permission.request", msg as PermissionRequestMessage);
+                return;
+            case "permission.resolved":
+                this.emit("permission.resolved", msg as PermissionResolvedMessage);
                 return;
             default:
                 return;

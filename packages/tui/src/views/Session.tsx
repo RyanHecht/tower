@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import type { TextareaRenderable } from "@opentui/core";
-import type { EventMessage, PermissionRequestMessage, SessionEvent } from "@tower/protocol";
+import type { EventMessage, PermissionRequestMessage, PermissionResolvedMessage, SessionEvent } from "@tower/protocol";
 import type { TowerClient } from "../client.js";
 import { getMarkdownStyle } from "../markdownStyle.js";
 import { useDoubleCtrlCQuit } from "../useDoubleCtrlCQuit.js";
@@ -331,13 +331,23 @@ export function Session({ client, sessionId, initialPrompt }: Props) {
             if (msg.sessionId !== sessionId) return;
             setPending({ requestId: msg.requestId, request: msg.request });
         };
+        const onPermResolved = (msg: PermissionResolvedMessage) => {
+            if (msg.sessionId !== sessionId) return;
+            // Drop the dialog whether we answered it or another subscriber
+            // (or the server itself, on cancel) did. Only clear if it
+            // matches what we have on screen — there can be back-to-back
+            // prompts where a stale frame would otherwise wipe the new one.
+            setPending((cur) => (cur && cur.requestId === msg.requestId ? null : cur));
+        };
         client.on("event", onEvent);
         client.on("permission.request", onPerm);
+        client.on("permission.resolved", onPermResolved);
 
         return () => {
             cancelled = true;
             client.off("event", onEvent);
             client.off("permission.request", onPerm);
+            client.off("permission.resolved", onPermResolved);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId]);

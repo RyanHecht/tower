@@ -108,7 +108,23 @@ export interface PermissionRequestMessage {
     request: PermissionRequest;
 }
 
-export type Outbound = ReadyMessage | ResultMessage | EventMessage | PermissionRequestMessage;
+/** Broadcast to every subscriber when a permission prompt is answered or
+ *  cancelled, so any open dialog can dismiss itself. The `decision` field
+ *  is omitted on cancel (e.g., session torn down). */
+export interface PermissionResolvedMessage {
+    type: "permission.resolved";
+    requestId: string;
+    sessionId: string;
+    decision?: "approve" | "deny";
+    reason?: "answered" | "cancelled";
+}
+
+export type Outbound =
+    | ReadyMessage
+    | ResultMessage
+    | EventMessage
+    | PermissionRequestMessage
+    | PermissionResolvedMessage;
 
 /**
  * Item shape returned by `session.listAll`. Augments the on-disk metadata with
