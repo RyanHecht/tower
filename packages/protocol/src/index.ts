@@ -67,6 +67,7 @@ export type Inbound =
           keepAlive?: unknown;
       }
     | { type: "session.list"; id: string | number }
+    | { type: "session.listAll"; id: string | number }
     | { type: "session.send"; sessionId: string; prompt: string }
     | { type: "session.abort"; sessionId: string }
     | { type: "session.keepAlive"; id: string | number; sessionId: string; keepAlive: unknown }
@@ -107,6 +108,20 @@ export interface PermissionRequestMessage {
 }
 
 export type Outbound = ReadyMessage | ResultMessage | EventMessage | PermissionRequestMessage;
+
+/**
+ * Item shape returned by `session.listAll`. Augments the on-disk metadata with
+ * an `isActive` flag (currently attached to the daemon by some connection or
+ * is the router's own session) so launchers can partition into active vs
+ * archived without needing extra round-trips.
+ */
+export interface SessionListAllItem {
+    sessionId: string;
+    workspace?: string;
+    summary?: string;
+    lastActivityAt?: string;
+    isActive: boolean;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers for client surfaces

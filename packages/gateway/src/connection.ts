@@ -8,6 +8,7 @@ import { parseRules, RuleParseError, type ParsedRule } from "./rules.js";
 import { resolveWorkspace } from "./workspaces.js";
 import { verifyToken, type VerifiedToken } from "./tokens.js";
 import type { Router } from "./router.js";
+import { attachedSessions } from "./attached.js";
 import { KeepAliveManager, type KeepAlivePolicy } from "./keepAlive.js";
 
 interface InboundBase {
@@ -64,6 +65,7 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
 
         const attached: AttachedSession = { session, policy, unsubscribers };
         sessions.set(session.sessionId, attached);
+        attachedSessions.add(session.sessionId);
         return attached;
     };
 
@@ -71,6 +73,7 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
         const attached = sessions.get(sessionId);
         if (!attached) return;
         sessions.delete(sessionId);
+        attachedSessions.remove(sessionId);
         attached.policy.cancelAll();
         for (const off of attached.unsubscribers) {
             try { off(); } catch { /* ignore */ }
@@ -183,6 +186,25 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                     const client = await getCopilotClient();
                     const list = await client.listSessions();
                     respond(msg.id, true, list);
+                } catch (err) {
+                    respond(msg.id, false, (err as Error).message);
+                }
+                return;
+            }
+
+            case "session.listAll": {
+                try {
+                    const client = await getCopilotClient();
+                    const list = await client.listSessions();
+                    const routerSid = router?.getSessionId() ?? null;
+                    const items = list.map((s) => ({
+                        sessionId: s.sessionId,
+                        workspace: s.context?.cwd,
+                        summary: s.summary,
+                        lastActivityAt: s.modifiedTime?.toISOString?.() ?? undefined,
+                        isActive: attachedSessions.has(s.sessionId) || s.sessionId === routerSid,
+                    }));
+                    respond(msg.id, true, items);
                 } catch (err) {
                     respond(msg.id, false, (err as Error).message);
                 }
