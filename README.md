@@ -1,6 +1,6 @@
 # tower
 
-> Tower copies. A control plane for Copilot agents — always-on, scheduled, or on-demand, reachable from any surface.
+> Copilot Sierra Delta Kilo, you are cleared for takeoff. Monitor Tower on 133.37 for further instance orchestration.
 
 A long-lived host process that runs `copilot --headless` plus a small WebSocket
 gateway. Surfaces (CLI, web app, mobile app, Discord bot, …) connect to the
