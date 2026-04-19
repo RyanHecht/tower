@@ -2,14 +2,18 @@
 
 > Copilot Sierra Delta Kilo, you are cleared for takeoff. Monitor Tower on 133.37 for further instance orchestration.
 
-A long-lived host process that runs `copilot --headless` plus a small WebSocket
-gateway. Surfaces (CLI, web app, mobile app, Discord bot, …) connect to the
+A long-lived host process that runs `copilot --headless` plus a small gateway
+server. Surfaces (TUI, web app, mobile app, Discord bot, …) connect to the
 gateway over WebSocket with a static bearer token and drive Copilot agent
 sessions. Each session has its own workspace directory under `workspaces/`.
+The gateway also serves an HTTP API on the same port for webhooks, cron
+management, and health probes.
 
 ```
-Surfaces ── WSS + bearer ──► Gateway ──cliUrl──► copilot --headless --port 4321
-                              (Node, this repo)   (the agent runtime)
+                          ┌─── HTTP (webhooks, crons, health)
+Surfaces ── WS + bearer ──►│
+                          └─── Gateway ── cliUrl ──► copilot --headless --port 4321
+                                (Node, this repo)     (the agent runtime)
 ```
 
 ## Prereqs
@@ -83,6 +87,41 @@ container, and that path is mounted from the named volume
 - Bind mounts under `./data`, `./logs`, `./workspaces`, `./plugins` keep
   tokens, logs, agent file edits, and plugins inspectable from the host.
 
+## TUI
+
+The terminal client is an OpenTUI/React app styled after Copilot CLI. Run it
+with `bun` (required — OpenTUI's `.scm` imports need Bun's import attributes):
+
+```sh
+TOWER_URL=ws://127.0.0.1:8787 TOWER_TOKEN=<token> npm run tui
+```
+
+Features:
+
+- **Session launcher** — lists all sessions (active pinned at top); create new
+  sessions or resume existing ones. Always shown on fresh launch.
+- **Session view** — full conversation timeline with Markdown rendering,
+  tool-call status, reasoning traces, and streaming indicators.
+- **Permission prompts** — `y`/`n` dialogs for permission requests; survive
+  WS disconnects and broadcast resolution to all attached subscribers.
+- **Slash commands** — `/model`, `/compact`, etc. from the input prompt.
+- **Status bar** — shows agent phase (thinking, streaming, reasoning, tool),
+  elapsed time, bytes streamed, narrated intent, and queued-send count.
+- **Keyboard** — `Esc` aborts the current turn; double `Ctrl+C` to exit.
+
+## Session lifecycle
+
+Sessions are long-lived and survive subscriber disconnects. When the last
+WebSocket client detaches, the SDK handle stays attached to the daemon — any
+in-flight turn keeps processing, and permission prompts wait for someone to
+reattach and answer them. Sessions are only torn down by:
+
+- **Explicit delete** — `session.delete` (WS)
+- **Keep-alive expiry** — if an `idle` keep-alive window elapses
+
+This is the core design principle: Tower is a daemon, not a terminal session.
+The agent keeps working whether or not anyone is watching.
+
 ## Bearer tokens
 
 Stored as sha256 hashes in `data/tokens.json`; plaintext is shown once at mint
@@ -102,37 +141,110 @@ escape the `workspaces/` root.
 
 ## Client ⇄ gateway protocol
 
+### WebSocket
+
 JSON line-frames over WS. First message must be `hello`.
 
-Inbound (surface → gateway):
+**Inbound (surface → gateway):**
 
 | Type                  | Fields                                                                                  |
 | --------------------- | --------------------------------------------------------------------------------------- |
 | `hello`               | `token`                                                                                 |
-| `session.create`      | `id`, `workspace`, `model?`, `permissionMode?`, `allow?: string[]`, `deny?: string[]`   |
-| `session.resume`      | `id`, `sessionId`, `permissionMode?`, `allow?: string[]`, `deny?: string[]`             |
+| `session.create`      | `id`, `workspace`, `model?`, `permissionMode?`, `allow?`, `deny?`, `keepAlive?`         |
+| `session.resume`      | `id`, `sessionId`, `permissionMode?`, `allow?`, `deny?`, `keepAlive?`                   |
 | `session.list`        | `id`                                                                                    |
+| `session.listAll`     | `id` — enriched list with `isActive`, `workspace`, `summary`                            |
+| `session.history`     | `id`, `sessionId` — replay all persisted events                                         |
 | `session.send`        | `sessionId`, `prompt`                                                                   |
 | `session.abort`       | `sessionId`                                                                             |
-| `permission.reply`    | `requestId`, `decision` (`approve`/`deny`)                                              |
-| `session.keepAlive`   | `id`, `sessionId`, `keepAlive` (see below)                                              |
+| `session.keepAlive`   | `id`, `sessionId`, `keepAlive`                                                          |
 | `session.delete`      | `id`, `sessionId` — explicit kill (frees CLI session + on-disk state)                   |
+| `permission.reply`    | `requestId`, `decision` (`approve`/`deny`)                                              |
 | `router.ask`          | `id`, `prompt` — natural-language session-routing request                               |
+| `router.info`         | `id` — get the router's own sessionId                                                   |
+| `cron.create`         | `id`, `sessionId`, `schedule`, `prompt`                                                 |
+| `cron.list`           | `id`                                                                                    |
+| `cron.get`            | `id`, `cronId`                                                                          |
+| `cron.update`         | `id`, `cronId`, `schedule?`, `prompt?`, `enabled?`, `sessionId?`                        |
+| `cron.delete`         | `id`, `cronId`                                                                          |
 
-Outbound (gateway → surface):
+SDK pass-through (all require `id`; session-scoped ones also require `sessionId`):
 
-| Type                  | Fields                                                       |
-| --------------------- | ------------------------------------------------------------ |
-| `ready`               | (after auth)                                                 |
-| `result`              | `id`, `ok`, `data?` / `error?`                               |
-| `event`               | `sessionId`, `event` (an SDK `SessionEvent`)                 |
-| `permission.request`  | `requestId`, `sessionId`, `request` (SDK `PermissionRequest`)|
+`models.list`, `account.quota`, `session.model.get`, `session.model.set`,
+`session.mode.get`, `session.mode.set`, `session.plan.read`,
+`session.plan.update`, `session.plan.delete`, `session.compact`,
+`session.fleet.start`, `session.agent.list`, `session.agent.get`,
+`session.agent.select`, `session.agent.deselect`.
+
+**Outbound (gateway → surface):**
+
+| Type                    | Fields                                                         |
+| ----------------------- | -------------------------------------------------------------- |
+| `ready`                 | (after auth)                                                   |
+| `result`                | `id`, `ok`, `data?` / `error?`                                 |
+| `event`                 | `sessionId`, `event` (an SDK `SessionEvent`)                   |
+| `permission.request`    | `requestId`, `sessionId`, `request` (SDK `PermissionRequest`)  |
+| `permission.resolved`   | `requestId`, `sessionId`, `decision?`, `reason`                |
+| `session.status`        | `sessionId`, `busy`, `lastIntent?`, `queuedSends`             |
+
+### HTTP API
+
+All HTTP routes except `/health` require `Authorization: Bearer <token>`.
+
+| Method   | Path               | Description                                    |
+| -------- | ------------------ | ---------------------------------------------- |
+| `GET`    | `/health`          | Health probe (no auth)                         |
+| `POST`   | `/hook/:sessionId` | Fire-and-forget prompt send (webhook ingress)  |
+| `GET`    | `/crons`           | List all cron jobs                             |
+| `POST`   | `/crons`           | Create a cron job                              |
+| `GET`    | `/crons/:id`       | Get a cron job                                 |
+| `PATCH`  | `/crons/:id`       | Update a cron job                              |
+| `DELETE` | `/crons/:id`       | Delete a cron job                              |
+
+**Webhook ingress** (`POST /hook/:sessionId`):
+
+Send a prompt to any session without an interactive connection. Body can be
+JSON `{ "prompt": "..." }` or plain text. Returns `202 Accepted` immediately
+(fire-and-forget). The prompt is delivered headlessly — permission requests
+during the send are auto-denied. 64KB body limit.
+
+```sh
+curl -X POST http://127.0.0.1:8787/hook/<sessionId> \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "check the build status"}'
+```
+
+**Cron jobs** (`POST /crons`):
+
+Schedule recurring prompts using standard 5-field cron expressions:
+
+```sh
+curl -X POST http://127.0.0.1:8787/crons \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sessionId": "<sessionId>",
+    "schedule": "0 9 * * *",
+    "prompt": "good morning — check my calendar and summarize what I have today"
+  }'
+```
+
+Jobs auto-disable after 5 consecutive failures (e.g., deleted session). Update
+with `PATCH /crons/:id` (`{ "enabled": true }` to re-enable, which resets the
+failure counter). Jobs persist across gateway restarts.
+
+### Permission modes
 
 `permissionMode` semantics (chosen per session by the client):
 
 - `yolo`   — auto-approve every permission request.
-- `safe`   — auto-approve `read` requests; prompt the surface for everything else.
-- `prompt` — relay every request to the surface (default).
+- `safe`   — auto-approve container-local operations (`read`, `write`, `shell`,
+  `custom-tool`); prompt the surface for `url` and `mcp` (default).
+- `prompt` — relay every request to the surface.
+
+Tower runs the agent inside a container with an isolated filesystem, so `safe`
+is deliberately more permissive than Copilot CLI's built-in safe mode.
 
 ### Allow / deny rules
 
@@ -198,10 +310,10 @@ Mechanics:
 - Send `session.delete` to kill a session immediately and free its state.
 
 The keep-alive policy persists in `data/state.json` along with the router's
-session id, so policies (and elapsed idle time) survive gateway restarts. The
-hydrate pass on boot drops policies for sessions that no longer exist on the
-daemon and immediately deletes any `idle` session whose window has already
-elapsed during downtime.
+session id and cron jobs, so policies (and elapsed idle time) survive gateway
+restarts. The hydrate pass on boot drops policies for sessions that no longer
+exist on the daemon and immediately deletes any `idle` session whose window has
+already elapsed during downtime.
 
 ### Router (natural-language session lookup)
 
@@ -245,9 +357,9 @@ This is an npm-workspaces monorepo:
 
 ```
 packages/
-  protocol/   # @tower/protocol — shared WS message types
-  gateway/    # @tower/gateway  — long-lived daemon + WS server
-  tui/        # @tower/tui      — interactive terminal client
+  protocol/   # @tower/protocol — shared WS + HTTP message types
+  gateway/    # @tower/gateway  — long-lived daemon + WS/HTTP server
+  tui/        # @tower/tui      — interactive terminal client (OpenTUI + React)
 scripts/      # container + token management shell scripts (run from repo root)
 docker/       # entrypoint for the daemon+gateway container
 data/         # tokens.json, state.json (bind-mounted into container, gitignored)
@@ -269,26 +381,40 @@ npm run container:build|start|stop|status|logs|auth|shell
 npm run token mint -- <label>
 ```
 
-## Layout
+### Gateway source layout
 
 ```
 packages/gateway/src/
-  config.ts        # paths, env, defaults
-  tokens.ts        # bearer token verification
-  workspaces.ts    # workspace dir resolution + safety
-  rules.ts         # allow/deny rule parser + matcher (kind(arg) syntax)
-  permissions.ts   # yolo / safe / prompt policy + rule evaluation
-  copilot.ts       # shared CopilotClient (cliUrl)
-  state.ts         # persisted gateway state (router sid, keep-alive policies)
-  keepAlive.ts     # per-session idle policy: default / forever / idleMs
-  router.ts        # always-on natural-language router session
-  server.ts        # WS server
-  connection.ts    # per-WS connection state machine
-  index.ts         # entry
+  config.ts              # paths, env, defaults
+  tokens.ts              # bearer token verification
+  workspaces.ts          # workspace dir resolution + safety
+  rules.ts               # allow/deny rule parser + matcher (kind(arg) syntax)
+  permissions.ts         # yolo / safe / prompt policy + rule evaluation
+  copilot.ts             # shared CopilotClient (cliUrl)
+  state.ts               # persisted gateway state (router sid, keep-alive, crons)
+  keepAlive.ts           # per-session idle policy: default / forever / idleMs
+  router.ts              # always-on natural-language router session
+  sessionAttachments.ts  # process-global session registry + multi-subscriber fanout
+  attached.ts            # lightweight session-id tracker for listAll isActive
+  headlessSend.ts        # send a prompt without an interactive subscriber
+  crons.ts               # cron scheduler (persisted, auto-disable on failure)
+  httpHandler.ts         # HTTP routes (health, webhooks, cron CRUD)
+  server.ts              # HTTP + WS server (shared port)
+  connection.ts          # per-WS connection handler
+  index.ts               # entry
 packages/protocol/src/
-  index.ts         # shared inbound/outbound WS message types
+  index.ts               # shared inbound/outbound message types + CronJobDef
 packages/tui/src/
-  index.tsx        # TUI entry (OpenTUI + React)
+  index.tsx              # TUI entry (OpenTUI + React)
+  client.ts              # TowerClient — WS wrapper with typed events
+  App.tsx                # top-level: connect → always show Launcher
+  keys.ts                # key bindings + help text
+  useDoubleCtrlCQuit.ts  # shared double-Ctrl+C exit hook
+  views/
+    Launcher.tsx         # session list + create/resume
+    Session.tsx          # conversation view + status bar + input
+    PermissionPrompt.tsx # y/n permission dialog
+    timeline.ts          # event → timeline-entry reducer + status tracking
 ```
 
 ## Caveats
@@ -296,4 +422,8 @@ packages/tui/src/
 - Bind the gateway port (`GATEWAY_PORT`) only to interfaces you trust, or put a
   TLS terminator (Caddy, nginx, Tailscale Funnel, Cloudflare Tunnel) in front
   before exposing it off the host.
-- Surfaces are out of scope here — write them against the WS protocol above.
+- The HTTP webhook endpoint is fire-and-forget. If the target session doesn't
+  exist, the send fails silently (logged server-side). Check container logs for
+  delivery failures.
+- Cron jobs auto-disable after 5 consecutive failures. Re-enable with
+  `PATCH /crons/:id { "enabled": true }` after fixing the underlying issue.
