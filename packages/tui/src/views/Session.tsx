@@ -453,7 +453,11 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
     return (
         <box style={{ flexDirection: "column", flexGrow: 1 }}>
             {/* Timeline — no border, just a padded scroll area. */}
-            <scrollbox style={{ flexGrow: 1, paddingLeft: 1, paddingRight: 1, paddingTop: 1 }}>
+            <scrollbox
+                stickyScroll
+                stickyStart="bottom"
+                style={{ flexGrow: 1, paddingLeft: 1, paddingRight: 1, paddingTop: 1 }}
+            >
                 {error ? <text fg="red">✗ {error}</text> : null}
                 {entries.map((e, idx) => (
                     <Entry key={e.id} entry={e} isFirst={idx === 0} />
