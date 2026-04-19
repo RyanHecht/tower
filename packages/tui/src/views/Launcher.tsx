@@ -306,10 +306,12 @@ export function Launcher({ client, routerSessionId, lastSessionId, onOpen, onQui
 
             <box
                 style={{
-                    border: true,
+                    border: ["left", "right"],
+                    borderColor: focus === "input" ? "cyan" : "gray",
+                    paddingLeft: 1,
+                    paddingRight: 1,
                     height: 3,
                     marginTop: 1,
-                    borderColor: focus === "input" ? "cyan" : "gray",
                 }}
             >
                 <input

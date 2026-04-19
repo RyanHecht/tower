@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useKeyboard } from "@opentui/react";
+import type { TextareaRenderable } from "@opentui/core";
 import type { EventMessage, PermissionRequestMessage } from "@tower/protocol";
 import type { TowerClient } from "../client.js";
+import { getMarkdownStyle } from "../markdownStyle.js";
 import { PermissionPrompt } from "./PermissionPrompt.js";
 import {
     applyEvent,
@@ -30,8 +32,7 @@ const fmtElapsed = (ms: number): string => {
     const s = Math.floor(ms / 1000);
     if (s < 60) return `${s}s`;
     const m = Math.floor(s / 60);
-    const rem = s % 60;
-    return `${m}m${rem.toString().padStart(2, "0")}s`;
+    return `${m}m${(s % 60).toString().padStart(2, "0")}s`;
 };
 
 const fmtBytes = (n: number): string => {
@@ -40,52 +41,105 @@ const fmtBytes = (n: number): string => {
     return `${(n / (1024 * 1024)).toFixed(1)}MB`;
 };
 
-const colorForKind = (kind: TimelineEntry["kind"]): string => {
+/**
+ * Header glyph + color for each entry kind. We use a filled circle for
+ * "primary" turns (user / assistant / intent) and an open circle for
+ * sub-events (tools, info), so a glance at the timeline reads like a
+ * stack of beats.
+ */
+const headerFor = (
+    kind: TimelineEntry["kind"],
+    toolStatus?: TimelineEntry["status"],
+): { glyph: string; color: string; label: string } => {
     switch (kind) {
-        case "user":      return "green";
-        case "assistant": return "white";
-        case "intent":    return "magenta";
-        case "reasoning": return "gray";
-        case "tool":      return "cyan";
-        case "info":      return "gray";
-        case "warning":   return "yellow";
-        case "error":     return "red";
+        case "user":      return { glyph: "●", color: "green",   label: "You"       };
+        case "assistant": return { glyph: "●", color: "white",   label: "Assistant" };
+        case "intent":    return { glyph: "●", color: "magenta", label: "Intent"    };
+        case "reasoning": return { glyph: "○", color: "gray",    label: "Thinking"  };
+        case "tool": {
+            const glyph =
+                toolStatus === "ok"      ? "✓"
+              : toolStatus === "fail"    ? "✗"
+              : toolStatus === "running" ? "○"
+                                         : "·";
+            const color =
+                toolStatus === "ok"   ? "green"
+              : toolStatus === "fail" ? "red"
+                                      : "cyan";
+            return { glyph, color, label: "Tool" };
+        }
+        case "info":      return { glyph: "·", color: "gray",    label: "Info"      };
+        case "warning":   return { glyph: "▲", color: "yellow",  label: "Warning"   };
+        case "error":     return { glyph: "✗", color: "red",     label: "Error"     };
     }
 };
 
-const prefixForEntry = (entry: TimelineEntry): string => {
-    switch (entry.kind) {
-        case "user":      return "❯ ";
-        case "assistant": return "";
-        case "intent":    return "✦ ";
-        case "reasoning": return "  ";
-        case "tool": {
-            const dot =
-                entry.status === "ok"      ? "✓"
-              : entry.status === "fail"    ? "✗"
-              : entry.status === "running" ? "▸"
-                                           : "·";
-            return `${dot} `;
-        }
-        case "info":      return "ℹ ";
-        case "warning":   return "⚠ ";
-        case "error":     return "✗ ";
-    }
+interface EntryProps {
+    entry: TimelineEntry;
+    isFirst: boolean;
+}
+
+const Entry = ({ entry, isFirst }: EntryProps) => {
+    const { glyph, color, label } = headerFor(entry.kind, entry.status);
+    const showMarkdown = entry.kind === "assistant" && entry.text.length > 0;
+
+    // For tool entries, the label is the tool name itself, in cyan.
+    const headerLabel = entry.kind === "tool" && entry.toolName ? entry.toolName : label;
+
+    return (
+        <box style={{ flexDirection: "column", marginTop: isFirst ? 0 : 1 }}>
+            <text>
+                <span fg={color} attributes={1}>{glyph}</span>{" "}
+                <span fg={color} attributes={1}>{headerLabel}</span>
+                {entry.kind === "tool" && entry.text.length > entry.toolName!.length ? (
+                    <span fg="gray">{entry.text.slice(entry.toolName!.length)}</span>
+                ) : null}
+                {entry.streaming ? <span fg="gray"> ▍</span> : null}
+            </text>
+
+            {/* Body — indented two spaces under the header dot. */}
+            {showMarkdown ? (
+                <box style={{ paddingLeft: 2, marginTop: 0 }}>
+                    <markdown
+                        content={entry.text}
+                        syntaxStyle={getMarkdownStyle()}
+                        streaming={entry.streaming === true}
+                    />
+                </box>
+            ) : entry.kind === "assistant" ? null : entry.kind === "tool" ? null : (
+                <box style={{ paddingLeft: 2 }}>
+                    <text fg={entry.kind === "user" ? "white" : entry.kind === "reasoning" ? "gray" : color}>
+                        {entry.text}
+                    </text>
+                </box>
+            )}
+
+            {entry.progress ? (
+                <box style={{ paddingLeft: 2 }}>
+                    <text fg="gray">↳ {entry.progress}</text>
+                </box>
+            ) : null}
+            {entry.result ? (
+                <box style={{ paddingLeft: 2 }}>
+                    <text fg="gray">{entry.result}</text>
+                </box>
+            ) : null}
+        </box>
+    );
 };
 
 export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
     const [entries, setEntries] = useState<TimelineEntry[]>([]);
     const [status, setStatus] = useState<AgentStatus>(initialStatus);
-    const [input, setInput] = useState("");
     const [error, setError] = useState<string | null>(null);
     const [pending, setPending] = useState<PendingPermission | null>(null);
     const [now, setNow] = useState(Date.now());
 
     const idRef = useRef(0);
     const mapsRef = useRef(newMaps());
+    const textareaRef = useRef<TextareaRenderable | null>(null);
     const nextId = () => ++idRef.current;
 
-    // Drive the spinner + elapsed-time refresh while the agent is busy.
     useEffect(() => {
         if (status.phase.kind === "idle") return;
         const interval = setInterval(() => setNow(Date.now()), 100);
@@ -127,6 +181,7 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
                     const trimmed = initialPrompt.trim();
                     api.push({ kind: "user", text: trimmed });
                     client.notify({ type: "session.send", sessionId, prompt: trimmed });
+                    setStatus((prev) => ({ ...prev, phase: { kind: "thinking" }, since: Date.now() }));
                 }
             } catch (err) {
                 setError(`session.resume failed: ${(err as Error).message}`);
@@ -152,14 +207,30 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId]);
 
-    const sendPrompt = (prompt: string) => {
-        const trimmed = prompt.trim();
+    const sendPrompt = (raw: string) => {
+        const trimmed = raw.trim();
         if (!trimmed) return;
         apiRef.current!.push({ kind: "user", text: trimmed });
         client.notify({ type: "session.send", sessionId, prompt: trimmed });
-        setInput("");
         setStatus((prev) => ({ ...prev, phase: { kind: "thinking" }, since: Date.now() }));
     };
+
+    // Wire up textarea submit imperatively — the React wrapper doesn't bridge
+    // onSubmit for the textarea, so we set the listener via the ref and pull
+    // the buffer's contents on demand.
+    useEffect(() => {
+        const ta = textareaRef.current;
+        if (!ta) return;
+        ta.onSubmit = () => {
+            const text = ta.plainText;
+            if (!text.trim()) return;
+            sendPrompt(text);
+            ta.setText("");
+        };
+        return () => { ta.onSubmit = undefined; };
+        // sendPrompt closes over sessionId via Props; re-bind whenever that changes.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [sessionId]);
 
     const answerPermission = (decision: "approve" | "deny") => {
         if (!pending) return;
@@ -181,6 +252,20 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
         }
     });
 
+    // Textarea key bindings: enter submits, shift+enter inserts a newline.
+    // Many terminals can't actually report shift+enter, so we also accept
+    // alt+enter (meta+enter) as an alias — that's the convention most coding
+    // CLIs adopt.
+    const textareaBindings = useMemo(
+        () => [
+            { name: "return", action: "submit" as const },
+            { name: "linefeed", action: "submit" as const },
+            { name: "return", shift: true, action: "newline" as const },
+            { name: "return", meta: true, action: "newline" as const },
+        ],
+        [],
+    );
+
     const statusBar = useMemo(() => {
         const elapsedMs = now - status.since;
         if (status.phase.kind === "idle") {
@@ -197,9 +282,7 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
         let color = "yellow";
         switch (status.phase.kind) {
             case "thinking":
-                label = "thinking";
                 detail = status.phase.detail;
-                color = "yellow";
                 break;
             case "reasoning":
                 label = "reasoning";
@@ -217,8 +300,7 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
                 color = "cyan";
                 break;
         }
-        const bytesPart =
-            status.streamBytes > 0 ? ` ${fmtBytes(status.streamBytes)}` : "";
+        const bytesPart = status.streamBytes > 0 ? ` ${fmtBytes(status.streamBytes)}` : "";
         return (
             <text>
                 <span fg={color}>{frame}</span>{" "}
@@ -231,36 +313,18 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
 
     return (
         <box style={{ flexDirection: "column", flexGrow: 1 }}>
-            <scrollbox
-                style={{ border: true, flexGrow: 1, padding: 1 }}
-                title={`Session ${sessionId}`}
-            >
-                {error ? <text fg="red">{error}</text> : null}
-                {entries.map((e) => (
-                    <box key={e.id} style={{ flexDirection: "column" }}>
-                        <text fg={colorForKind(e.kind)} attributes={e.kind === "intent" ? 1 : 0}>
-                            {prefixForEntry(e)}
-                            {e.kind === "tool" && e.toolName ? (
-                                <>
-                                    <span fg="cyan" attributes={1}>{e.toolName}</span>
-                                    <span fg="gray">{e.text.slice(e.toolName.length)}</span>
-                                </>
-                            ) : (
-                                e.text
-                            )}
-                            {e.streaming ? <span fg="gray"> ▍</span> : null}
-                        </text>
-                        {e.progress ? (
-                            <text fg="gray">    {e.progress}</text>
-                        ) : null}
-                        {e.result ? (
-                            <text fg="gray">    {e.result}</text>
-                        ) : null}
-                    </box>
+            {/* Timeline — no border, just a padded scroll area. */}
+            <scrollbox style={{ flexGrow: 1, paddingLeft: 1, paddingRight: 1, paddingTop: 1 }}>
+                {error ? <text fg="red">✗ {error}</text> : null}
+                {entries.map((e, idx) => (
+                    <Entry key={e.id} entry={e} isFirst={idx === 0} />
                 ))}
             </scrollbox>
 
-            <box style={{ paddingLeft: 1, paddingRight: 1 }}>{statusBar}</box>
+            {/* Status bar between timeline and input. */}
+            <box style={{ paddingLeft: 1, paddingRight: 1, marginTop: 1, marginBottom: 0 }}>
+                {statusBar}
+            </box>
 
             {pending ? (
                 <PermissionPrompt
@@ -269,13 +333,21 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
                     onAnswer={answerPermission}
                 />
             ) : (
-                <box style={{ border: true, height: 3 }} title="prompt (enter to send, esc to detach, ctrl+c to abort)">
-                    <input
+                /* Prompt — only left + right verticals, no top/bottom border. */
+                <box
+                    style={{
+                        border: ["left", "right"],
+                        borderColor: "gray",
+                        paddingLeft: 1,
+                        paddingRight: 1,
+                        minHeight: 3,
+                    }}
+                >
+                    <textarea
+                        ref={textareaRef as never}
                         focused
-                        placeholder="Type a message…"
-                        value={input}
-                        onInput={setInput as never}
-                        onSubmit={sendPrompt as never}
+                        placeholder="Type a message — enter to send, shift/alt+enter for newline, esc to detach, ctrl+c to abort"
+                        keyBindings={textareaBindings as never}
                     />
                 </box>
             )}
