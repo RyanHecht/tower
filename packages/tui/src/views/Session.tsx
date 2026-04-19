@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import type { TextareaRenderable } from "@opentui/core";
-import type { EventMessage, PermissionRequestMessage } from "@tower/protocol";
+import type { EventMessage, PermissionRequestMessage, SessionEvent } from "@tower/protocol";
 import type { TowerClient } from "../client.js";
 import { getMarkdownStyle } from "../markdownStyle.js";
 import { PermissionPrompt } from "./PermissionPrompt.js";
@@ -258,11 +258,41 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
     useEffect(() => {
         let cancelled = false;
         const api = apiRef.current!;
+        // Live events that arrive before history finishes replaying are
+        // buffered, then drained in arrival order. applyEvent already
+        // handles "update existing entry" via the maps, so any overlap
+        // between history and live just merges into the same entries.
+        let replaying = true;
+        const buffered: EventMessage[] = [];
 
         (async () => {
             try {
                 await client.request("session.resume", { sessionId, permissionMode: "prompt" });
                 if (cancelled) return;
+                // Replay everything the daemon has on disk for this session
+                // so the timeline isn't blank when we attach to an existing
+                // conversation.
+                try {
+                    const hist = await client.request<{ events: SessionEvent[] }>(
+                        "session.history",
+                        { sessionId },
+                    );
+                    if (cancelled) return;
+                    for (const event of hist.events ?? []) {
+                        applyEvent(api, event);
+                    }
+                } catch (err) {
+                    api.push({
+                        kind: "warning",
+                        text: `couldn't load history: ${(err as Error).message}`,
+                    });
+                }
+                replaying = false;
+                // Drain any live events that arrived during the fetch.
+                while (buffered.length > 0) {
+                    const msg = buffered.shift()!;
+                    applyEvent(api, msg.event);
+                }
                 api.push({ kind: "info", text: `attached to ${sessionId}` });
                 if (initialPrompt && initialPrompt.trim().length > 0) {
                     const trimmed = initialPrompt.trim();
@@ -272,11 +302,16 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
                 }
             } catch (err) {
                 setError(`session.resume failed: ${(err as Error).message}`);
+                replaying = false;
             }
         })();
 
         const onEvent = (msg: EventMessage) => {
             if (msg.sessionId !== sessionId) return;
+            if (replaying) {
+                buffered.push(msg);
+                return;
+            }
             applyEvent(api, msg.event);
         };
         const onPerm = (msg: PermissionRequestMessage) => {

@@ -68,6 +68,7 @@ export type Inbound =
       }
     | { type: "session.list"; id: string | number }
     | { type: "session.listAll"; id: string | number }
+    | { type: "session.history"; id: string | number; sessionId: string }
     | { type: "session.send"; sessionId: string; prompt: string }
     | { type: "session.abort"; sessionId: string }
     | { type: "session.keepAlive"; id: string | number; sessionId: string; keepAlive: unknown }
@@ -129,6 +130,7 @@ export interface SessionListAllItem {
 
 /** Forwarded SessionEvent types — useful when surfaces want to filter. */
 export const FORWARDED_EVENT_TYPES = [
+    "user.message",
     "assistant.turn_start",
     "assistant.turn_end",
     "assistant.intent",

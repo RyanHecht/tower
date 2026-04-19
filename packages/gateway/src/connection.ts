@@ -211,6 +211,18 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                 return;
             }
 
+            case "session.history": {
+                const attached = sessions.get(msg.sessionId);
+                if (!attached) return respond(msg.id, false, `not attached to session ${msg.sessionId}`);
+                try {
+                    const events = await attached.session.getMessages();
+                    respond(msg.id, true, { sessionId: msg.sessionId, events });
+                } catch (err) {
+                    respond(msg.id, false, (err as Error).message);
+                }
+                return;
+            }
+
             case "session.send": {
                 const attached = sessions.get(msg.sessionId);
                 if (!attached) return respond(undefined, false, `not attached to session ${msg.sessionId}`);

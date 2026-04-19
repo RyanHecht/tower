@@ -126,6 +126,12 @@ export const applyEvent = (api: TimelineApi, event: SessionEvent): void => {
     const { maps } = api;
 
     switch (ev.type) {
+        case "user.message": {
+            const content = String(data["content"] ?? "");
+            if (content) api.push({ kind: "user", text: content });
+            return;
+        }
+
         case "assistant.turn_start": {
             maps.turnStart = api.entryCount();
             api.setStatus((prev) => ({
