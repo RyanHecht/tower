@@ -14,6 +14,7 @@ import {
     fanoutPrompt,
     forceDetach,
     getSession,
+    noteSend,
     register,
     type Subscription,
 } from "./sessionAttachments.js";
@@ -248,6 +249,7 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                 const session = getSession(msg.sessionId);
                 if (!session) return respond(undefined, false, `not attached to session ${msg.sessionId}`);
                 keepAlive.touch(msg.sessionId);
+                noteSend(msg.sessionId);
                 try {
                     await session.send({ prompt: msg.prompt });
                 } catch (err) {

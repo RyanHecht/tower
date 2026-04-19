@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useKeyboard, useRenderer } from "@opentui/react";
 import type { TextareaRenderable } from "@opentui/core";
-import type { EventMessage, PermissionRequestMessage, PermissionResolvedMessage, SessionEvent } from "@tower/protocol";
+import type { EventMessage, PermissionRequestMessage, PermissionResolvedMessage, SessionEvent, SessionStatusMessage } from "@tower/protocol";
 import type { TowerClient } from "../client.js";
 import { getMarkdownStyle } from "../markdownStyle.js";
 import { useDoubleCtrlCQuit } from "../useDoubleCtrlCQuit.js";
@@ -196,11 +196,14 @@ export function Session({ client, sessionId, initialPrompt }: Props) {
     const [status, setStatus] = useState<AgentStatus>(initialStatus);
     const [error, setError] = useState<string | null>(null);
     const [pending, setPending] = useState<PendingPermission | null>(null);
+    const [queuedSends, setQueuedSends] = useState(0);
     const [now, setNow] = useState(Date.now());
 
     const idRef = useRef(0);
     const mapsRef = useRef(newMaps());
     const textareaRef = useRef<TextareaRenderable | null>(null);
+    /** Latest server-reported turn state. Set from `session.status` frames. */
+    const serverStatusRef = useRef<{ busy: boolean; lastIntent?: string }>({ busy: false });
     const nextId = () => ++idRef.current;
 
     useEffect(() => {
@@ -289,16 +292,29 @@ export function Session({ client, sessionId, initialPrompt }: Props) {
                 }
                 replaying = false;
                 // History only contains persistent events — session.idle is
-                // ephemeral, so replaying always leaves us in whatever phase
-                // the last turn ended in (typically "thinking" from
-                // assistant.turn_end). Snap back to idle so the spinner
-                // doesn't claim the agent is still working.
-                setStatus((prev) => ({
-                    ...prev,
-                    phase: { kind: "idle" },
-                    since: Date.now(),
-                    streamBytes: 0,
-                }));
+                // ephemeral, so a turn that has fully completed leaves us in
+                // whatever phase the last turn ended in (typically "thinking"
+                // from assistant.turn_end). Snap back to idle so the spinner
+                // doesn't claim the agent is still working — UNLESS the
+                // server has told us the agent is genuinely mid-turn, in
+                // which case keep the replayed phase so the user sees the
+                // in-flight tool / streaming / thinking indicator.
+                if (!serverStatusRef.current.busy) {
+                    setStatus((prev) => ({
+                        ...prev,
+                        phase: { kind: "idle" },
+                        since: Date.now(),
+                        streamBytes: 0,
+                    }));
+                } else {
+                    // Restore the agent's last narrated intent so the
+                    // status bar has something to say even when the only
+                    // replayed events were tool calls.
+                    const intent = serverStatusRef.current.lastIntent;
+                    if (intent) {
+                        setStatus((prev) => ({ ...prev, lastIntent: intent }));
+                    }
+                }
                 // Drain any live events that arrived during the fetch.
                 while (buffered.length > 0) {
                     const msg = buffered.shift()!;
@@ -339,15 +355,31 @@ export function Session({ client, sessionId, initialPrompt }: Props) {
             // prompts where a stale frame would otherwise wipe the new one.
             setPending((cur) => (cur && cur.requestId === msg.requestId ? null : cur));
         };
+        const onStatus = (msg: SessionStatusMessage) => {
+            if (msg.sessionId !== sessionId) return;
+            serverStatusRef.current = { busy: msg.busy, lastIntent: msg.lastIntent };
+            setQueuedSends(msg.queuedSends);
+            // Keep `lastIntent` mirrored into the status reducer so the
+            // status bar's `detail` field has something to render even when
+            // we attached mid-turn and missed the original `assistant.intent`
+            // event.
+            if (msg.lastIntent) {
+                setStatus((prev) =>
+                    prev.lastIntent === msg.lastIntent ? prev : { ...prev, lastIntent: msg.lastIntent },
+                );
+            }
+        };
         client.on("event", onEvent);
         client.on("permission.request", onPerm);
         client.on("permission.resolved", onPermResolved);
+        client.on("session.status", onStatus);
 
         return () => {
             cancelled = true;
             client.off("event", onEvent);
             client.off("permission.request", onPerm);
             client.off("permission.resolved", onPermResolved);
+            client.off("session.status", onStatus);
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [sessionId]);
@@ -523,15 +555,16 @@ export function Session({ client, sessionId, initialPrompt }: Props) {
                 break;
         }
         const bytesPart = status.streamBytes > 0 ? ` ${fmtBytes(status.streamBytes)}` : "";
+        const queuedPart = queuedSends > 0 ? ` · ${queuedSends} queued` : "";
         return (
             <text>
                 <span fg={color}>{frame}</span>{" "}
                 <span fg={color} attributes={1}>{label}</span>
-                <span fg="gray"> ({fmtElapsed(elapsedMs)}{bytesPart})</span>
+                <span fg="gray"> ({fmtElapsed(elapsedMs)}{bytesPart}{queuedPart})</span>
                 {detail ? <span fg="gray"> — {detail}</span> : null}
             </text>
         );
-    }, [status, now, pending]);
+    }, [status, now, pending, queuedSends]);
 
     return (
         <box style={{ flexDirection: "column", flexGrow: 1 }}>

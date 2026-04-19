@@ -25,6 +25,15 @@ interface AttachmentEntry {
     policy: PermissionPolicy;
     subscribers: Set<Subscriber>;
     sdkUnsubscribers: Array<() => void>;
+    /** Live turn state — observed from the SDK event stream. */
+    status: SessionStatusSnapshot;
+}
+
+/** Snapshot of agent state for late-arriving / reattaching subscribers. */
+export interface SessionStatusSnapshot {
+    busy: boolean;
+    lastIntent?: string;
+    queuedSends: number;
 }
 
 export interface Subscription {
@@ -88,6 +97,7 @@ export function register(args: RegisterArgs): { subscription: Subscription; reus
             policy: args.policy,
             subscribers: new Set(),
             sdkUnsubscribers: [],
+            status: { busy: false, queuedSends: 0 },
         };
         entries.set(args.sessionId, entry);
         attachedSessions.add(args.sessionId);
@@ -95,6 +105,7 @@ export function register(args: RegisterArgs): { subscription: Subscription; reus
         for (const evt of FORWARDED_EVENT_TYPES) {
             const e = entry;
             const listener = (event: SessionEvent) => {
+                updateStatusFromEvent(e, event);
                 fanout(e, { type: "event", sessionId: args.sessionId, event });
             };
             const unsubscribe = args.session.on(evt as never, listener as never);
@@ -120,6 +131,10 @@ export function register(args: RegisterArgs): { subscription: Subscription; reus
     const replayPending = () => {
         const cur = entries.get(args.sessionId);
         if (!cur) return;
+        // Status snapshot first so the client knows whether to override
+        // its post-replay snap-to-idle and what to render in the queue
+        // indicator. Then any in-flight permission prompts.
+        args.subscriber.send(buildStatusFrame(cur));
         for (const pending of cur.policy.listPending()) {
             args.subscriber.send({
                 type: "permission.request",
@@ -149,6 +164,93 @@ export function fanoutPrompt(
         sessionId,
         request: pending.request,
     });
+}
+
+/** Snapshot of the agent's live turn state for a given session. */
+export function getStatus(sessionId: string): SessionStatusSnapshot | undefined {
+    const entry = entries.get(sessionId);
+    if (!entry) return undefined;
+    return { ...entry.status };
+}
+
+/** Record that a `session.send` is being delivered to the SDK. If the agent
+ *  is already busy, the new prompt is queued behind the in-flight turn —
+ *  bump the count and broadcast so subscribers can show "(N queued)". */
+export function noteSend(sessionId: string): void {
+    const entry = entries.get(sessionId);
+    if (!entry) return;
+    if (!entry.status.busy) return;
+    entry.status.queuedSends += 1;
+    fanout(entry, buildStatusFrame(entry));
+}
+
+function buildStatusFrame(entry: AttachmentEntry) {
+    return {
+        type: "session.status" as const,
+        sessionId: entry.sessionId,
+        busy: entry.status.busy,
+        queuedSends: entry.status.queuedSends,
+        ...(entry.status.lastIntent ? { lastIntent: entry.status.lastIntent } : {}),
+    };
+}
+
+/** Update the per-session status from an SDK event and broadcast the new
+ *  snapshot when transitions matter (busy edge, queue reset). */
+function updateStatusFromEvent(entry: AttachmentEntry, event: SessionEvent): void {
+    let changed = false;
+    switch (event.type) {
+        case "assistant.turn_start": {
+            if (!entry.status.busy) {
+                entry.status.busy = true;
+                changed = true;
+            }
+            break;
+        }
+        case "session.idle": {
+            if (entry.status.busy || entry.status.queuedSends > 0) {
+                entry.status.busy = false;
+                entry.status.queuedSends = 0;
+                changed = true;
+            }
+            break;
+        }
+        case "assistant.intent": {
+            const next = String((event.data as { intent?: unknown })?.intent ?? "");
+            if (next && next !== entry.status.lastIntent) {
+                entry.status.lastIntent = next;
+                changed = true;
+            }
+            break;
+        }
+        case "tool.user_requested":
+        case "tool.execution_start": {
+            // The `report_intent` "tool" carries the agent's narrated
+            // intent in its arguments — mirror it into lastIntent.
+            const data = event.data as { name?: unknown; arguments?: unknown };
+            if (data?.name === "report_intent") {
+                const args = data.arguments;
+                let intent: string | undefined;
+                if (typeof args === "string") {
+                    try {
+                        const parsed = JSON.parse(args);
+                        if (parsed && typeof parsed === "object" && typeof (parsed as { intent?: unknown }).intent === "string") {
+                            intent = (parsed as { intent: string }).intent;
+                        }
+                    } catch { /* ignore */ }
+                } else if (args && typeof args === "object" && typeof (args as { intent?: unknown }).intent === "string") {
+                    intent = (args as { intent: string }).intent;
+                }
+                if (intent && intent !== entry.status.lastIntent) {
+                    entry.status.lastIntent = intent;
+                    changed = true;
+                }
+            }
+            break;
+        }
+        default:
+            break;
+    }
+    if (changed) fanout(entry, buildStatusFrame(entry));
 }
 
 async function teardown(entry: AttachmentEntry): Promise<void> {

@@ -124,12 +124,30 @@ export interface PermissionResolvedMessage {
     reason?: "answered" | "cancelled";
 }
 
+/** Snapshot of a session's "is the agent currently working?" state.
+ *
+ *  Sent unsolicited to a freshly-attached subscriber and again whenever
+ *  `busy` or `queuedSends` changes. This lets a reattaching client know
+ *  the agent is mid-turn (so it shouldn't render an idle prompt) and
+ *  surface how many of the user's messages are waiting in line. */
+export interface SessionStatusMessage {
+    type: "session.status";
+    sessionId: string;
+    /** True between `assistant.turn_start` and the next `session.idle`. */
+    busy: boolean;
+    /** Most recent `assistant.intent` / `report_intent` narration, if any. */
+    lastIntent?: string;
+    /** `session.send` frames received while busy. Reset to 0 on `session.idle`. */
+    queuedSends: number;
+}
+
 export type Outbound =
     | ReadyMessage
     | ResultMessage
     | EventMessage
     | PermissionRequestMessage
-    | PermissionResolvedMessage;
+    | PermissionResolvedMessage
+    | SessionStatusMessage;
 
 /**
  * Item shape returned by `session.listAll`. Augments the on-disk metadata with

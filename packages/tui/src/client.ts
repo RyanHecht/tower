@@ -8,6 +8,7 @@ import type {
     PermissionRequestMessage,
     PermissionResolvedMessage,
     ResultMessage,
+    SessionStatusMessage,
 } from "@tower/protocol";
 
 interface PendingRequest {
@@ -119,6 +120,9 @@ export class TowerClient extends EventEmitter {
                 return;
             case "permission.resolved":
                 this.emit("permission.resolved", msg as PermissionResolvedMessage);
+                return;
+            case "session.status":
+                this.emit("session.status", msg as SessionStatusMessage);
                 return;
             default:
                 return;
