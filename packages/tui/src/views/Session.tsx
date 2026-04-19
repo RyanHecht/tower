@@ -407,14 +407,10 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
 
     const statusBar = useMemo(() => {
         const elapsedMs = now - status.since;
-        if (status.phase.kind === "idle") {
-            return (
-                <text fg="gray">
-                    <span fg="green">●</span> idle{" "}
-                    {status.lastIntent ? <span fg="gray">— last: {status.lastIntent}</span> : null}
-                </text>
-            );
-        }
+        // Don't render anything when idle — the prompt itself is the
+        // "ready for input" indicator. The status bar only earns its space
+        // while the agent is actively working.
+        if (status.phase.kind === "idle") return null;
         const frame = SPINNER_FRAMES[Math.floor(now / 80) % SPINNER_FRAMES.length];
         let label = "thinking";
         let detail: string | undefined;
@@ -464,10 +460,13 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
                 ))}
             </scrollbox>
 
-            {/* Status bar between timeline and input. */}
-            <box style={{ paddingLeft: 1, paddingRight: 1, marginTop: 1, marginBottom: 0 }}>
-                {statusBar}
-            </box>
+            {/* Status bar between timeline and input — only present while
+                the agent is doing work. */}
+            {statusBar ? (
+                <box style={{ paddingLeft: 1, paddingRight: 1, marginTop: 1, marginBottom: 0 }}>
+                    {statusBar}
+                </box>
+            ) : null}
 
             {pending ? (
                 <PermissionPrompt
