@@ -1,4 +1,6 @@
-# copilot-agent-daemon
+# tower
+
+> Tower copies. A control plane for Copilot agents — always-on, scheduled, or on-demand, reachable from any surface.
 
 A long-lived host process that runs `copilot --headless` plus a small WebSocket
 gateway. Surfaces (CLI, web app, mobile app, Discord bot, …) connect to the
