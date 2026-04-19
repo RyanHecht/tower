@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { TowerClient } from "./client.js";
 import { Connecting } from "./views/Connecting.js";
 import { SessionList } from "./views/SessionList.js";
+import { Session } from "./views/Session.js";
 
 type View =
     | { kind: "connecting" }
@@ -39,8 +40,9 @@ export function App() {
         return <Connecting url={URL} error={view.kind === "error" ? view.error : connectError} />;
     }
 
+    const client = clientRef.current!;
+
     if (view.kind === "list") {
-        const client = clientRef.current!;
         return (
             <SessionList
                 client={client}
@@ -51,11 +53,11 @@ export function App() {
         );
     }
 
-    // view.kind === "session" — Session view lands in a follow-up commit.
     return (
-        <box style={{ border: true, padding: 1, flexDirection: "column" }} title={`Session ${view.sessionId}`}>
-            <text>(session view lands in follow-up commit)</text>
-            <text fg="gray">esc to detach — currently no-op</text>
-        </box>
+        <Session
+            client={client}
+            sessionId={view.sessionId}
+            onDetach={() => setView({ kind: "list" })}
+        />
     );
 }
