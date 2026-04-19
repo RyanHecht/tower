@@ -25,6 +25,13 @@ services:
       DAEMON_HOST: 127.0.0.1
       DAEMON_PORT: 4321
       COPILOT_HOME: /home/tower/.copilot
+      # Pass-through GitHub auth for the headless copilot daemon. Checked in
+      # this order by the CLI: COPILOT_GITHUB_TOKEN, GH_TOKEN, GITHUB_TOKEN.
+      # Empty values are ignored. container-start.sh auto-fills
+      # COPILOT_GITHUB_TOKEN from `gh auth token` if none is set on the host.
+      COPILOT_GITHUB_TOKEN: ${COPILOT_GITHUB_TOKEN:-}
+      GH_TOKEN: ${GH_TOKEN:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
     ports:
       # Host-loopback only. Anyone on the LAN must not reach this port.
       - "127.0.0.1:8787:8787"

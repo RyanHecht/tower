@@ -39,7 +39,12 @@ npm run container:build
 # 2. Start the container in the background
 npm run container:start
 
-# 3. One-time: log the daemon's isolated ~/.copilot into a GitHub account
+# 3. One-time auth — pick ONE of:
+#   (a) Pass through your existing GitHub auth (auto-extracted from
+#       `gh auth token` if present, or set COPILOT_GITHUB_TOKEN /
+#       GH_TOKEN / GITHUB_TOKEN before `npm run container:start`).
+#       This is the default if any token is available on the host.
+#   (b) Device-flow login against the daemon's isolated ~/.copilot:
 npm run container:auth
 
 # 4. Mint at least one bearer token for surfaces to use
