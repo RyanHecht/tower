@@ -311,9 +311,17 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
         ta.onContentChange = () => {
             setInputRows(Math.min(MAX_INPUT_ROWS, Math.max(1, ta.lineCount)));
         };
+        // Keep keyboard focus pinned to the prompt no matter where the user
+        // clicks. Mouse-wheel scrolling on the timeline is dispatched by hit
+        // position rather than focus, so this doesn't break scrolling.
+        const refocus = () => {
+            queueMicrotask(() => ta.focus());
+        };
+        ta.on("blurred", refocus);
         return () => {
             ta.onSubmit = undefined;
             ta.onContentChange = undefined;
+            ta.off("blurred", refocus);
         };
         // sendPrompt closes over sessionId via Props; re-bind whenever that changes.
         // eslint-disable-next-line react-hooks/exhaustive-deps
