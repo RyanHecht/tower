@@ -3,13 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "dist/index.js",
-  "bin": { "tower-tui": "dist/index.js" },
+  "main": "src/index.tsx",
+  "bin": { "tower-tui": "src/index.tsx" },
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b",
-    "dev": "tsx watch src/index.tsx",
-    "start": "node --enable-source-maps dist/index.js"
+    "dev": "bun --watch run src/index.tsx",
+    "start": "bun run src/index.tsx"
   },
   "dependencies": {
     "@opentui/core": "^0.1.100",
@@ -19,9 +19,9 @@
     "ws": "^8.20.0"
   },
   "devDependencies": {
+    "@types/bun": "^1.2.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
-    "@types/ws": "^8.18.1",
-    "tsx": "^4.19.0"
+    "@types/ws": "^8.18.1"
   }
 }
