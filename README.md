@@ -198,10 +198,38 @@ The router itself is sandboxed: the only tools it can invoke are the three
 above (its permission handler denies everything else), so it cannot read
 files, run shell commands, or hit the network on your behalf.
 
+## Repository layout
+
+This is an npm-workspaces monorepo:
+
+```
+packages/
+  protocol/   # @tower/protocol — shared WS message types
+  gateway/    # @tower/gateway  — long-lived daemon + WS server
+  tui/        # @tower/tui      — interactive terminal client
+scripts/      # daemon + token management shell scripts (run from repo root)
+data/         # tokens.json, state.json, daemon.pid (gitignored)
+logs/         # daemon + gateway logs (gitignored)
+workspaces/   # per-session cwd (gitignored)
+```
+
+Common commands (from the repo root):
+
+```sh
+npm install                  # links workspaces + installs deps
+npm run build                # builds all packages
+npm run typecheck            # typechecks all packages
+npm run dev                  # gateway in tsx watch mode
+npm start                    # gateway from compiled dist
+npm run tui                  # interactive TUI client
+npm run daemon:start|stop|status
+npm run token mint -- <label>
+```
+
 ## Layout
 
 ```
-src/gateway/
+packages/gateway/src/
   config.ts        # paths, env, defaults
   tokens.ts        # bearer token verification
   workspaces.ts    # workspace dir resolution + safety
@@ -214,10 +242,10 @@ src/gateway/
   server.ts        # WS server
   connection.ts    # per-WS connection state machine
   index.ts         # entry
-scripts/           # daemon and token management
-data/              # tokens.json, state.json, daemon.pid (gitignored)
-logs/              # daemon + gateway logs (gitignored)
-workspaces/        # per-session cwd (gitignored, including .router/)
+packages/protocol/src/
+  index.ts         # shared inbound/outbound WS message types
+packages/tui/src/
+  index.tsx        # TUI entry (OpenTUI + React)
 ```
 
 ## Caveats
