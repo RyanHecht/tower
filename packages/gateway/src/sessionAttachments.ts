@@ -13,11 +13,11 @@ export interface Subscriber {
 
 /**
  * Per-CopilotSession state that survives WebSocket disconnects. The SDK
- * handle and its policy stay alive as long as any subscriber is attached
- * OR a permission prompt is awaiting an answer. This lets a client
- * disconnect mid-prompt and a future client (the same TUI reconnecting,
- * a different surface) pick the prompt up and answer it instead of the
- * request being silently denied at WS-close time.
+ * handle and its policy stay alive across subscriber churn — the whole
+ * point of Tower is to be a long-running daemon, so a session keeps
+ * processing whether or not anyone happens to be watching. Entries are
+ * only torn down via `forceDetach()` (explicit `session.delete` or
+ * keep-alive expiry).
  */
 interface AttachmentEntry {
     sessionId: string;
@@ -109,14 +109,12 @@ export function register(args: RegisterArgs): { subscription: Subscription; reus
         const cur = entries.get(args.sessionId);
         if (!cur) return;
         cur.subscribers.delete(args.subscriber);
-        if (cur.subscribers.size > 0) return;
-        if (cur.policy.pendingCount() > 0) {
-            console.log(
-                `[attachments] ${args.sessionId}: last subscriber gone, holding open for ${cur.policy.pendingCount()} pending prompt(s)`,
-            );
-            return;
-        }
-        await teardown(cur);
+        // Intentionally do NOT tear down here, even when subscribers
+        // hits zero. The SDK handle keeps receiving events from any
+        // in-flight turn, and a future subscriber can pick up where
+        // this one left off (including answering a prompt that arrived
+        // while no one was attached). Lifecycle is governed by
+        // `forceDetach()` (session.delete) or keep-alive expiry.
     };
 
     const replayPending = () => {

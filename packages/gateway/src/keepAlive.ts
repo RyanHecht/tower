@@ -1,6 +1,7 @@
 import type { CopilotClient } from "@github/copilot-sdk";
 import type { KeepAlivePolicy } from "@tower/protocol";
 import type { StateStore } from "./state.js";
+import { forceDetach } from "./sessionAttachments.js";
 
 export type { KeepAlivePolicy } from "@tower/protocol";
 
@@ -212,6 +213,7 @@ export class KeepAliveManager {
         }
         console.log(`[keepAlive] session ${sessionId} idle for ${idle}ms — deleting`);
         this.clear(sessionId);
+        await forceDetach(sessionId);
         try {
             await this.client.deleteSession(sessionId);
         } catch (err) {
