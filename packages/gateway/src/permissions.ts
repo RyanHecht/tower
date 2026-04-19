@@ -17,12 +17,19 @@ export interface PendingPrompt {
 }
 
 export interface PermissionPolicy {
+    /** The policy mode this was built with — exposed for diagnostics. */
+    readonly mode: PermissionMode;
     /** Implementation of `onPermissionRequest` to pass to the SDK. */
     handler: (request: PermissionRequest) => Promise<PermissionRequestResult>;
-    /** Resolve a pending prompt (called when the surface answers). */
-    answer: (requestId: string, decision: "approve" | "deny") => void;
+    /** Resolve a pending prompt (called when the surface answers). Returns
+     *  true if the request was found and resolved, false otherwise. */
+    answer: (requestId: string, decision: "approve" | "deny") => boolean;
     /** Cancel + reject all in-flight prompts (e.g., on disconnect). */
     cancelAll: () => void;
+    /** Number of prompts currently awaiting an answer. */
+    pendingCount: () => number;
+    /** Snapshot of pending prompts for replay to a newly attached subscriber. */
+    listPending: () => PendingPrompt[];
 }
 
 export interface PolicyHooks {
@@ -67,11 +74,12 @@ export function buildPolicy(options: PolicyOptions, hooks: PolicyHooks): Permiss
             : { kind: "denied-interactively-by-user" };
     };
 
-    const answer = (requestId: string, decision: "approve" | "deny") => {
+    const answer = (requestId: string, decision: "approve" | "deny"): boolean => {
         const entry = pending.get(requestId);
-        if (!entry) return;
+        if (!entry) return false;
         pending.delete(requestId);
         entry.resolve(decision);
+        return true;
     };
 
     const cancelAll = () => {
@@ -79,5 +87,12 @@ export function buildPolicy(options: PolicyOptions, hooks: PolicyHooks): Permiss
         pending.clear();
     };
 
-    return { handler, answer, cancelAll };
+    return {
+        mode,
+        handler,
+        answer,
+        cancelAll,
+        pendingCount: () => pending.size,
+        listPending: () => Array.from(pending.values()),
+    };
 }
