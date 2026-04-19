@@ -1,14 +1,18 @@
 import { useEffect } from "react";
+import { shutdown } from "../shutdown.js";
 
 interface Props {
     url: string;
     error: string | null;
 }
 
+/** Renderer-aware shutdown installed by index.tsx. Falls back to a plain exit
+ *  if the TUI was loaded outside the normal entry (e.g. tests). */
+
 export function Connecting({ url, error }: Props) {
     useEffect(() => {
         if (error) {
-            const t = setTimeout(() => process.exit(1), 50);
+            const t = setTimeout(() => shutdown(1), 50);
             return () => clearTimeout(t);
         }
     }, [error]);

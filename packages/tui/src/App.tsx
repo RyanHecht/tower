@@ -4,6 +4,7 @@ import { Connecting } from "./views/Connecting.js";
 import { Launcher } from "./views/Launcher.js";
 import { Session } from "./views/Session.js";
 import { loadState, saveState } from "./state.js";
+import { shutdown } from "./shutdown.js";
 
 type View =
     | { kind: "connecting" }
@@ -11,7 +12,7 @@ type View =
     | { kind: "session"; sessionId: string }
     | { kind: "error"; error: string };
 
-const URL = process.env["TOWER_URL"] ?? "ws://127.0.0.1:8080";
+const URL = process.env["TOWER_URL"] ?? "ws://127.0.0.1:8787";
 const TOKEN = process.env["TOWER_TOKEN"] ?? "";
 
 export function App() {
@@ -78,7 +79,7 @@ export function App() {
                 routerSessionId={routerSessionId}
                 lastSessionId={lastSessionId}
                 onOpen={openSession}
-                onQuit={() => process.exit(0)}
+                onQuit={() => shutdown(0)}
             />
         );
     }
