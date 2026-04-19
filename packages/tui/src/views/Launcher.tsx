@@ -8,9 +8,13 @@ interface Props {
     client: TowerClient;
     routerSessionId: string | null;
     lastSessionId?: string | null;
-    onOpen: (sessionId: string) => void;
+    onOpen: (sessionId: string, initialPrompt?: string) => void;
     onQuit: () => void;
 }
+
+// Lines starting with this character are routed to the router instead of
+// creating a fresh session. Chosen because "?" reads as "ask a question".
+const ROUTER_PREFIX = "?";
 
 interface RouteDecision {
     action: "select" | "create" | "give_up";
@@ -162,13 +166,13 @@ export function Launcher({ client, routerSessionId, lastSessionId, onOpen, onQui
         }
     };
 
-    const newSession = async () => {
+    const newSession = async (initialPrompt?: string) => {
         try {
             const created = await client.request<{ sessionId: string }>("session.create", {
                 workspace: "default",
                 permissionMode: "prompt",
             });
-            onOpen(created.sessionId);
+            onOpen(created.sessionId, initialPrompt);
         } catch (err) {
             setError(`session.create failed: ${(err as Error).message}`);
         }
@@ -186,13 +190,25 @@ export function Launcher({ client, routerSessionId, lastSessionId, onOpen, onQui
 
     const onInputSubmit = (_value: string) => {
         // Enter while input is focused.
-        if (input.trim().length === 0) {
+        const trimmed = input.trim();
+        if (trimmed.length === 0) {
             // Empty input — open the highlighted row if any.
             activate(allSelectable[selectedIdx]);
             return;
         }
-        // Has text — ask the router.
-        void askRouter(input.trim());
+        if (trimmed.startsWith(ROUTER_PREFIX)) {
+            // Strip the prefix (and any whitespace after it) before asking.
+            const question = trimmed.slice(ROUTER_PREFIX.length).trim();
+            if (question.length === 0) {
+                setRouterError(`type a question after "${ROUTER_PREFIX}"`);
+                return;
+            }
+            void askRouter(question);
+            return;
+        }
+        // Default: spin up a fresh session and send the typed text as its
+        // first message.
+        void newSession(trimmed);
     };
 
     useKeyboard((key) => {
@@ -298,21 +314,33 @@ export function Launcher({ client, routerSessionId, lastSessionId, onOpen, onQui
             >
                 <input
                     focused={focus === "input"}
-                    placeholder="Type to filter, or ask the router…"
+                    placeholder={`Type to start a new session, or "${ROUTER_PREFIX} …" to ask the router`}
                     value={input}
                     onInput={setInput as never}
                     onSubmit={onInputSubmit as never}
                 />
             </box>
 
-            {input.trim().length > 0 ? (
-                <box style={{ marginTop: 1 }}>
-                    <text fg={asking ? "yellow" : "cyan"}>
-                        {asking ? "⏳ Asking router…  " : "▸ Ask router: "}
-                        <span fg="white">"{truncate(input.trim(), 60)}"</span>
-                    </text>
-                </box>
-            ) : null}
+            {(() => {
+                const trimmed = input.trim();
+                if (trimmed.length === 0) return null;
+                const isRouter = trimmed.startsWith(ROUTER_PREFIX);
+                const payload = isRouter ? trimmed.slice(ROUTER_PREFIX.length).trim() : trimmed;
+                const label = asking
+                    ? "⏳ Asking router…  "
+                    : isRouter
+                      ? `▸ Ask router (${ROUTER_PREFIX}): `
+                      : "▸ New session: ";
+                const color = asking ? "yellow" : isRouter ? "magenta" : "cyan";
+                return (
+                    <box style={{ marginTop: 1 }}>
+                        <text fg={color}>
+                            {label}
+                            <span fg="white">"{truncate(payload, 60)}"</span>
+                        </text>
+                    </box>
+                );
+            })()}
 
             {routerError ? (
                 <box style={{ marginTop: 1 }}>
@@ -346,7 +374,7 @@ export function Launcher({ client, routerSessionId, lastSessionId, onOpen, onQui
 
             <box style={{ marginTop: 1 }}>
                 <text fg="gray">
-                    {focus === "input" ? "input" : "list"} • tab: focus list • enter: go • ctrl+n: new • ? help • q quit
+                    {focus === "input" ? "input" : "list"} • tab: focus list • enter: new session ({ROUTER_PREFIX} = ask router) • ctrl+n: blank • q quit
                 </text>
             </box>
         </box>

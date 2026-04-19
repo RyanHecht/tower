@@ -9,7 +9,7 @@ import { shutdown } from "./shutdown.js";
 type View =
     | { kind: "connecting" }
     | { kind: "launcher" }
-    | { kind: "session"; sessionId: string }
+    | { kind: "session"; sessionId: string; initialPrompt?: string }
     | { kind: "error"; error: string };
 
 const URL = process.env["TOWER_URL"] ?? "ws://127.0.0.1:8787";
@@ -55,10 +55,10 @@ export function App() {
         return () => client.close();
     }, []);
 
-    const openSession = (sessionId: string) => {
+    const openSession = (sessionId: string, initialPrompt?: string) => {
         setLastSessionId(sessionId);
         void saveState({ lastSessionId: sessionId, lastView: "session" });
-        setView({ kind: "session", sessionId });
+        setView({ kind: "session", sessionId, initialPrompt });
     };
 
     const backToLauncher = () => {
@@ -88,6 +88,7 @@ export function App() {
         <Session
             client={client}
             sessionId={view.sessionId}
+            initialPrompt={view.initialPrompt}
             onDetach={backToLauncher}
         />
     );
