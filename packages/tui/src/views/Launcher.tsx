@@ -291,7 +291,7 @@ export function Launcher({ client, routerSessionId, lastSessionId, onOpen, onQui
         const dotColor = it.isActive ? "green" : "gray";
         const prefix = isSelected ? "▸ " : "  ";
         return (
-            <text key={it.sessionId} fg={isSelected ? "white" : "gray"} attributes={isSelected ? 1 : 0}>
+            <text key={it.sessionId} fg={isSelected ? "#d4d4d8" : "gray"} attributes={isSelected ? 1 : 0}>
                 {prefix}
                 <span fg={dotColor}>{dot}</span> {id}  workspace={ws}  {age} ago
             </text>
@@ -317,7 +317,7 @@ export function Launcher({ client, routerSessionId, lastSessionId, onOpen, onQui
             >
                 <box style={{ width: 2 }}>
                     <text>
-                        <span fg="white" attributes={1}>❯</span>
+                        <span fg="#d4d4d8">❯</span>
                     </text>
                 </box>
                 <input
@@ -345,7 +345,7 @@ export function Launcher({ client, routerSessionId, lastSessionId, onOpen, onQui
                     <box style={{ marginTop: 1 }}>
                         <text fg={color}>
                             {label}
-                            <span fg="white">"{truncate(payload, 60)}"</span>
+                            <span fg="#d4d4d8">"{truncate(payload, 60)}"</span>
                         </text>
                     </box>
                 );

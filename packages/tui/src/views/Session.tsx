@@ -90,13 +90,13 @@ interface EntryProps {
 const Entry = ({ entry, isFirst }: EntryProps) => {
     const marginTop = isFirst ? 0 : 1;
 
-    // Plain user prompt — bold, prefixed with ❯, no header circle.
+    // Plain user prompt — soft off-white, prefixed with ❯, no header circle.
     if (entry.kind === "user") {
         return (
             <box style={{ flexDirection: "column", marginTop }}>
                 <text>
-                    <span fg="white" attributes={1}>❯ </span>
-                    <span fg="white" attributes={1}>{entry.text}</span>
+                    <span fg="#d4d4d8">❯ </span>
+                    <span fg="#d4d4d8">{entry.text}</span>
                 </text>
             </box>
         );
@@ -485,7 +485,7 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
                 >
                     <box style={{ width: 2, paddingTop: 0 }}>
                         <text>
-                            <span fg="white" attributes={1}>❯</span>
+                            <span fg="#d4d4d8">❯</span>
                         </text>
                     </box>
                     <textarea
