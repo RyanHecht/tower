@@ -23,7 +23,7 @@ export type RouteDecision =
     | { action: "create"; workspace: string; reason: string; sessionId: string }
     | { action: "give_up"; reason: string };
 
-const ROUTER_WORKSPACE = ".router";
+const ROUTER_WORKSPACE = "_router";
 const ROUTER_TOOL_NAMES = new Set(["route_to_existing", "route_to_new", "route_give_up"]);
 const ROUTER_TIMEOUT_MS = 60_000;
 

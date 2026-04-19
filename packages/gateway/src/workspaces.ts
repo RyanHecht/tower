@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { config } from "./config.js";
 
-const NAME_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/i;
+const NAME_PATTERN = /^[a-z0-9_][a-z0-9._-]{0,63}$/i;
 
 export class WorkspaceError extends Error {}
 

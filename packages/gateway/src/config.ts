@@ -2,7 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = process.env.PROJECT_ROOT ?? path.resolve(here, "..", "..");
+const ROOT = process.env.PROJECT_ROOT ?? path.resolve(here, "..", "..", "..");
 
 export const config = {
     root: ROOT,
