@@ -5,6 +5,7 @@ import { getCopilotClient, shutdownCopilotClient } from "./copilot.js";
 import { Router } from "./router.js";
 import { resolveWorkspace } from "./workspaces.js";
 import { KeepAliveManager } from "./keepAlive.js";
+import { CronScheduler } from "./crons.js";
 import { StateStore } from "./state.js";
 
 async function ensureDirs(): Promise<void> {
@@ -58,11 +59,14 @@ async function main(): Promise<void> {
     await keepAlive.hydrate();
 
     const router = await bootRouter(store);
-    const wss = startServer(router, keepAlive);
+    const crons = new CronScheduler(store, keepAlive);
+    crons.hydrate();
+    const { close } = startServer({ router, keepAlive, crons });
 
     const shutdown = async (signal: string) => {
         console.log(`[gateway] received ${signal}, shutting down`);
-        wss.close();
+        close();
+        crons.stop();
         keepAlive.stop();
         if (router) await router.shutdown();
         await store.flush();

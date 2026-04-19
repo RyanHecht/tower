@@ -80,7 +80,36 @@ export type Inbound =
     | { type: "session.delete"; id: string | number; sessionId: string }
     | { type: "permission.reply"; requestId: string; decision: "approve" | "deny" }
     | { type: "router.ask"; id: string | number; prompt: string }
-    | { type: "router.info"; id: string | number };
+    | { type: "router.info"; id: string | number }
+    // ── Cron management ─────────────────────────────────────────────
+    | { type: "cron.create"; id: string | number; sessionId: string; schedule: string; prompt: string }
+    | { type: "cron.list"; id: string | number }
+    | { type: "cron.get"; id: string | number; cronId: string }
+    | { type: "cron.update"; id: string | number; cronId: string; schedule?: string; prompt?: string; enabled?: boolean; sessionId?: string }
+    | { type: "cron.delete"; id: string | number; cronId: string }
+    // ── Tier 1: direct SDK pass-through ─────────────────────────────
+    // Server-scoped
+    | { type: "models.list"; id: string | number }
+    | { type: "account.quota"; id: string | number }
+    // Session model
+    | { type: "session.model.get"; id: string | number; sessionId: string }
+    | { type: "session.model.set"; id: string | number; sessionId: string; model: string }
+    // Session mode (interactive / plan / autopilot)
+    | { type: "session.mode.get"; id: string | number; sessionId: string }
+    | { type: "session.mode.set"; id: string | number; sessionId: string; mode: "interactive" | "plan" | "autopilot" }
+    // Plan management
+    | { type: "session.plan.read"; id: string | number; sessionId: string }
+    | { type: "session.plan.update"; id: string | number; sessionId: string; content: string }
+    | { type: "session.plan.delete"; id: string | number; sessionId: string }
+    // Context compaction
+    | { type: "session.compact"; id: string | number; sessionId: string }
+    // Fleet mode
+    | { type: "session.fleet.start"; id: string | number; sessionId: string; prompt?: string }
+    // Agent selection
+    | { type: "session.agent.list"; id: string | number; sessionId: string }
+    | { type: "session.agent.get"; id: string | number; sessionId: string }
+    | { type: "session.agent.select"; id: string | number; sessionId: string; name: string }
+    | { type: "session.agent.deselect"; id: string | number; sessionId: string };
 
 export type InboundType = Inbound["type"];
 
@@ -197,3 +226,22 @@ export type ForwardedEventType = (typeof FORWARDED_EVENT_TYPES)[number];
 // Re-export the SDK types that show up in the wire format so consumers don't
 // need to depend on @github/copilot-sdk directly.
 export type { PermissionRequest, SessionEvent } from "@github/copilot-sdk";
+
+// ---------------------------------------------------------------------------
+// Cron job shape (shared between gateway and surfaces)
+// ---------------------------------------------------------------------------
+
+export interface CronJobDef {
+    id: string;
+    sessionId: string;
+    /** Standard 5-field cron expression (min hour dom month dow). */
+    schedule: string;
+    /** The prompt text sent to the session on each trigger. */
+    prompt: string;
+    enabled: boolean;
+    createdAt: string;
+    lastRunAt?: string;
+    /** Consecutive failure count. Job is auto-disabled after MAX_FAILURES. */
+    failCount: number;
+    lastError?: string;
+}

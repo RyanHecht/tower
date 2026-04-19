@@ -19,13 +19,14 @@ import {
     type Subscription,
 } from "./sessionAttachments.js";
 import { KeepAliveManager, type KeepAlivePolicy } from "./keepAlive.js";
+import type { CronScheduler } from "./crons.js";
 
 interface InboundBase {
     type: string;
     id?: string | number;
 }
 
-export function handleConnection(ws: WebSocket, remote: string, router: Router | null, keepAlive: KeepAliveManager): void {
+export function handleConnection(ws: WebSocket, remote: string, router: Router | null, keepAlive: KeepAliveManager, crons: CronScheduler): void {
     let auth: VerifiedToken | null = null;
     /** sessionId -> our subscription handle (for detaching on close). */
     const subs = new Map<string, Subscription>();
@@ -312,6 +313,234 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
 
             case "router.info": {
                 respond(msg.id, true, { sessionId: router?.getSessionId() ?? null });
+                return;
+            }
+
+            // ── Cron management ────────────────────────────────────────
+
+            case "cron.create": {
+                try {
+                    const job = crons.create(msg.sessionId, msg.schedule, msg.prompt);
+                    respond(msg.id, true, { cron: job });
+                } catch (err) {
+                    respond(msg.id, false, (err as Error).message);
+                }
+                return;
+            }
+
+            case "cron.list": {
+                respond(msg.id, true, { crons: crons.list() });
+                return;
+            }
+
+            case "cron.get": {
+                const job = crons.get(msg.cronId);
+                if (!job) return respond(msg.id, false, `cron not found: ${msg.cronId}`);
+                respond(msg.id, true, { cron: job });
+                return;
+            }
+
+            case "cron.update": {
+                try {
+                    const job = crons.update(msg.cronId, {
+                        schedule: msg.schedule,
+                        prompt: msg.prompt,
+                        enabled: msg.enabled,
+                        sessionId: msg.sessionId,
+                    });
+                    respond(msg.id, true, { cron: job });
+                } catch (err) {
+                    respond(msg.id, false, (err as Error).message);
+                }
+                return;
+            }
+
+            case "cron.delete": {
+                const deleted = crons.delete(msg.cronId);
+                if (!deleted) return respond(msg.id, false, `cron not found: ${msg.cronId}`);
+                respond(msg.id, true, { deleted: true });
+                return;
+            }
+
+            // ── Tier 1: direct SDK pass-through ────────────────────────
+
+            case "models.list": {
+                try {
+                    const client = await getCopilotClient();
+                    const result = await client.listModels();
+                    respond(msg.id, true, { models: result });
+                } catch (err) {
+                    respond(msg.id, false, (err as Error).message);
+                }
+                return;
+            }
+
+            case "account.quota": {
+                try {
+                    const client = await getCopilotClient();
+                    const result = await client.rpc.account.getQuota();
+                    respond(msg.id, true, result);
+                } catch (err) {
+                    respond(msg.id, false, (err as Error).message);
+                }
+                return;
+            }
+
+            case "session.model.get": {
+                const session = getSession(msg.sessionId);
+                if (!session) return respond(msg.id, false, `not attached to session ${msg.sessionId}`);
+                try {
+                    const result = await session.rpc.model.getCurrent();
+                    respond(msg.id, true, result);
+                } catch (err) {
+                    respond(msg.id, false, (err as Error).message);
+                }
+                return;
+            }
+
+            case "session.model.set": {
+                const session = getSession(msg.sessionId);
+                if (!session) return respond(msg.id, false, `not attached to session ${msg.sessionId}`);
+                try {
+                    const result = await session.rpc.model.switchTo({ modelId: msg.model });
+                    respond(msg.id, true, result);
+                } catch (err) {
+                    respond(msg.id, false, (err as Error).message);
+                }
+                return;
+            }
+
+            case "session.mode.get": {
+                const session = getSession(msg.sessionId);
+                if (!session) return respond(msg.id, false, `not attached to session ${msg.sessionId}`);
+                try {
+                    const result = await session.rpc.mode.get();
+                    respond(msg.id, true, result);
+                } catch (err) {
+                    respond(msg.id, false, (err as Error).message);
+                }
+                return;
+            }
+
+            case "session.mode.set": {
+                const session = getSession(msg.sessionId);
+                if (!session) return respond(msg.id, false, `not attached to session ${msg.sessionId}`);
+                try {
+                    const result = await session.rpc.mode.set({ mode: msg.mode });
+                    respond(msg.id, true, result);
+                } catch (err) {
+                    respond(msg.id, false, (err as Error).message);
+                }
+                return;
+            }
+
+            case "session.plan.read": {
+                const session = getSession(msg.sessionId);
+                if (!session) return respond(msg.id, false, `not attached to session ${msg.sessionId}`);
+                try {
+                    const result = await session.rpc.plan.read();
+                    respond(msg.id, true, result);
+                } catch (err) {
+                    respond(msg.id, false, (err as Error).message);
+                }
+                return;
+            }
+
+            case "session.plan.update": {
+                const session = getSession(msg.sessionId);
+                if (!session) return respond(msg.id, false, `not attached to session ${msg.sessionId}`);
+                try {
+                    const result = await session.rpc.plan.update({ content: msg.content });
+                    respond(msg.id, true, result);
+                } catch (err) {
+                    respond(msg.id, false, (err as Error).message);
+                }
+                return;
+            }
+
+            case "session.plan.delete": {
+                const session = getSession(msg.sessionId);
+                if (!session) return respond(msg.id, false, `not attached to session ${msg.sessionId}`);
+                try {
+                    const result = await session.rpc.plan.delete();
+                    respond(msg.id, true, result);
+                } catch (err) {
+                    respond(msg.id, false, (err as Error).message);
+                }
+                return;
+            }
+
+            case "session.compact": {
+                const session = getSession(msg.sessionId);
+                if (!session) return respond(msg.id, false, `not attached to session ${msg.sessionId}`);
+                try {
+                    const result = await session.rpc.compaction.compact();
+                    respond(msg.id, true, result);
+                } catch (err) {
+                    respond(msg.id, false, (err as Error).message);
+                }
+                return;
+            }
+
+            case "session.fleet.start": {
+                const session = getSession(msg.sessionId);
+                if (!session) return respond(msg.id, false, `not attached to session ${msg.sessionId}`);
+                try {
+                    const result = await session.rpc.fleet.start({
+                        ...(msg.prompt ? { prompt: msg.prompt } : {}),
+                    });
+                    respond(msg.id, true, result);
+                } catch (err) {
+                    respond(msg.id, false, (err as Error).message);
+                }
+                return;
+            }
+
+            case "session.agent.list": {
+                const session = getSession(msg.sessionId);
+                if (!session) return respond(msg.id, false, `not attached to session ${msg.sessionId}`);
+                try {
+                    const result = await session.rpc.agent.list();
+                    respond(msg.id, true, result);
+                } catch (err) {
+                    respond(msg.id, false, (err as Error).message);
+                }
+                return;
+            }
+
+            case "session.agent.get": {
+                const session = getSession(msg.sessionId);
+                if (!session) return respond(msg.id, false, `not attached to session ${msg.sessionId}`);
+                try {
+                    const result = await session.rpc.agent.getCurrent();
+                    respond(msg.id, true, result);
+                } catch (err) {
+                    respond(msg.id, false, (err as Error).message);
+                }
+                return;
+            }
+
+            case "session.agent.select": {
+                const session = getSession(msg.sessionId);
+                if (!session) return respond(msg.id, false, `not attached to session ${msg.sessionId}`);
+                try {
+                    const result = await session.rpc.agent.select({ name: msg.name });
+                    respond(msg.id, true, result);
+                } catch (err) {
+                    respond(msg.id, false, (err as Error).message);
+                }
+                return;
+            }
+
+            case "session.agent.deselect": {
+                const session = getSession(msg.sessionId);
+                if (!session) return respond(msg.id, false, `not attached to session ${msg.sessionId}`);
+                try {
+                    const result = await session.rpc.agent.deselect();
+                    respond(msg.id, true, result);
+                } catch (err) {
+                    respond(msg.id, false, (err as Error).message);
+                }
                 return;
             }
 

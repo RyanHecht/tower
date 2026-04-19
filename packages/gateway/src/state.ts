@@ -17,6 +17,7 @@ import { config } from "./config.js";
  */
 
 import type { KeepAlivePolicy } from "./keepAlive.js";
+import type { CronJobDef } from "@tower/protocol";
 
 export interface PersistedKeepAliveEntry {
     policy: KeepAlivePolicy;
@@ -29,9 +30,11 @@ export interface GatewayState {
     router?: { sessionId: string };
     /** keep-alive policies keyed by CLI sessionId. */
     keepAlive: Record<string, PersistedKeepAliveEntry>;
+    /** Cron jobs keyed by cronId. */
+    crons: Record<string, CronJobDef>;
 }
 
-const DEFAULT_STATE: GatewayState = { keepAlive: {} };
+const DEFAULT_STATE: GatewayState = { keepAlive: {}, crons: {} };
 const STATE_PATH = join(config.paths.data, "state.json");
 const SAVE_DEBOUNCE_MS = 250;
 
@@ -48,6 +51,7 @@ export class StateStore {
             this.state = {
                 router: parsed.router,
                 keepAlive: parsed.keepAlive ?? {},
+                crons: parsed.crons ?? {},
             };
         } catch (err) {
             if ((err as NodeJS.ErrnoException).code === "ENOENT") {
@@ -84,6 +88,22 @@ export class StateStore {
     setKeepAlive(sessionId: string, entry: PersistedKeepAliveEntry | null): void {
         if (entry === null) delete this.state.keepAlive[sessionId];
         else this.state.keepAlive[sessionId] = entry;
+        this.markDirty();
+    }
+
+    // ── crons ───────────────────────────────────────────────────────
+
+    getCronAll(): Record<string, CronJobDef> {
+        return { ...this.state.crons };
+    }
+
+    getCron(cronId: string): CronJobDef | undefined {
+        return this.state.crons[cronId];
+    }
+
+    setCron(cronId: string, job: CronJobDef | null): void {
+        if (job === null) delete this.state.crons[cronId];
+        else this.state.crons[cronId] = job;
         this.markDirty();
     }
 
