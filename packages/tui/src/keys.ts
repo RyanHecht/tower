@@ -3,7 +3,8 @@ export const KEYS = {
     help: "?",
     refresh: "r",
     newSession: "n",
-    abort: "ctrl+c",
+    abort: "escape",
+    copy: "ctrl+c",
     quit: "ctrl+c×2",
     approve: "a",
     deny: "d",
@@ -27,6 +28,7 @@ export const LAUNCHER_HELP: KeyHelp[] = [
 
 export const SESSION_VIEW_HELP: KeyHelp[] = [
     { key: "type + enter", label: "send prompt" },
-    { key: "ctrl+c", label: "abort current run / copy selection" },
+    { key: "esc", label: "abort current run" },
+    { key: "ctrl+c", label: "copy selection" },
     { key: "ctrl+c×2", label: "quit (press Ctrl+C twice within ~1.5s)" },
 ];

@@ -418,6 +418,15 @@ export function Session({ client, sessionId, initialPrompt }: Props) {
 
     useKeyboard((key) => {
         if (pending) return;
+        if (key.name === "escape") {
+            // Abort an in-flight turn. No-op if idle.
+            if (status.phase.kind !== "idle") {
+                client.notify({ type: "session.abort", sessionId });
+                apiRef.current!.push({ kind: "info", text: "(abort sent)" });
+                setStatus((prev) => ({ ...prev, phase: { kind: "idle" }, since: Date.now() }));
+            }
+            return;
+        }
         if (key.ctrl && key.name === "c") {
             // 1. If the user has selected text (textarea or document), copy
             //    it via OSC52 — that's the most common reason to hit Ctrl+C
@@ -435,16 +444,8 @@ export function Session({ client, sessionId, initialPrompt }: Props) {
                 });
                 return;
             }
-            // 2. If a turn is in flight, abort it. We still arm the quit
-            //    counter so a *second* Ctrl+C right after the abort exits
-            //    the app — matching Copilot CLI's behaviour.
-            if (status.phase.kind !== "idle") {
-                client.notify({ type: "session.abort", sessionId });
-                apiRef.current!.push({ kind: "info", text: "(abort sent)" });
-                setStatus((prev) => ({ ...prev, phase: { kind: "idle" }, since: Date.now() }));
-            }
-            // 3. Arm / fire double-Ctrl+C quit. The hook handles the second
-            //    press → shutdown(0) and the timeout that disarms the hint.
+            // 2. Arm / fire double-Ctrl+C quit. Aborting an in-flight turn
+            //    is on Esc now, so Ctrl+C is exclusively about exiting.
             pressedCtrlC();
             return;
         }
@@ -573,7 +574,7 @@ export function Session({ client, sessionId, initialPrompt }: Props) {
                 <textarea
                     ref={textareaRef as never}
                     focused={!pending}
-                    placeholder='Type a message — enter to send; shift/alt+enter, ctrl+j, or trailing "\" for newline; ctrl+c to abort, twice to quit'
+                    placeholder='Type a message — enter to send; shift/alt+enter, ctrl+j, or trailing "\" for newline; esc to abort, ctrl+c twice to quit'
                     keyBindings={textareaBindings as never}
                     style={{ flexGrow: 1 } as never}
                 />
