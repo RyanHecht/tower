@@ -413,6 +413,19 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
 
     const statusBar = useMemo(() => {
         const elapsedMs = now - status.since;
+        // While a permission dialog is up the agent isn't actually working,
+        // but we still want the user to see what it was about to do — show
+        // the last intent (if any) as a paused indicator above the dialog.
+        if (pending) {
+            if (!status.lastIntent) return null;
+            return (
+                <text>
+                    <span fg="#fbbf24">⏸</span>{" "}
+                    <span fg="#fbbf24" attributes={1}>awaiting approval</span>
+                    <span fg="gray"> — {status.lastIntent}</span>
+                </text>
+            );
+        }
         // Don't render anything when idle — the prompt itself is the
         // "ready for input" indicator. The status bar only earns its space
         // while the agent is actively working.
@@ -452,7 +465,7 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
                 {detail ? <span fg="gray"> — {detail}</span> : null}
             </text>
         );
-    }, [status, now]);
+    }, [status, now, pending]);
 
     return (
         <box style={{ flexDirection: "column", flexGrow: 1 }}>
