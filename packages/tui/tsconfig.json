@@ -5,7 +5,8 @@
     "rootDir": "src",
     "composite": true,
     "declaration": true,
-    "jsx": "react-jsx"
+    "jsx": "react-jsx",
+    "jsxImportSource": "@opentui/react"
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"],
   "references": [{ "path": "../protocol" }]
