@@ -75,6 +75,11 @@ export class Router {
 
     constructor(private client: CopilotClient, private deps: RouterDeps) {}
 
+    /** The router's own sessionId, once `init()` has resolved. Null otherwise. */
+    getSessionId(): string | null {
+        return this.session?.sessionId ?? null;
+    }
+
     async init(opts?: { resumeSessionId?: string; onSessionId?: (id: string) => void }): Promise<void> {
         const cwd = await resolveWorkspace(ROUTER_WORKSPACE);
         const tools: Tool[] = [

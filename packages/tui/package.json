@@ -1,0 +1,27 @@
+{
+  "name": "@tower/tui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": { "tower-tui": "dist/index.js" },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "dev": "tsx watch src/index.tsx",
+    "start": "node --enable-source-maps dist/index.js"
+  },
+  "dependencies": {
+    "@opentui/core": "^0.1.100",
+    "@opentui/react": "^0.1.100",
+    "@tower/protocol": "*",
+    "react": "^19.0.0",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.19.0"
+  }
+}

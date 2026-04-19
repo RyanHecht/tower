@@ -1,14 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { PermissionRequest, PermissionRequestResult } from "@github/copilot-sdk";
+import { type PermissionMode } from "@tower/protocol";
 import { evaluateRules, type ParsedRule } from "./rules.js";
 
-export type PermissionMode = "yolo" | "safe" | "prompt";
-
-export const PERMISSION_MODES: readonly PermissionMode[] = ["yolo", "safe", "prompt"];
-
-export function isPermissionMode(s: unknown): s is PermissionMode {
-    return typeof s === "string" && (PERMISSION_MODES as readonly string[]).includes(s);
-}
+export { type PermissionMode, PERMISSION_MODES, isPermissionMode } from "@tower/protocol";
 
 /** Tools considered low-risk in "safe" mode. Everything else is prompted. */
 const SAFE_KINDS = new Set<PermissionRequest["kind"]>(["read"]);

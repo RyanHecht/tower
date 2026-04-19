@@ -4,25 +4,19 @@
   "private": true,
   "type": "module",
   "description": "Long-lived Copilot CLI daemon + WebSocket gateway",
+  "workspaces": ["packages/*"],
   "scripts": {
-    "build": "tsc -p .",
-    "start": "node --enable-source-maps dist/gateway/index.js",
-    "dev": "tsx watch src/gateway/index.ts",
-    "typecheck": "tsc -p . --noEmit",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev": "npm run dev -w @tower/gateway",
+    "start": "npm run start -w @tower/gateway",
+    "tui": "npm run dev -w @tower/tui",
     "daemon:start": "bash scripts/daemon-start.sh",
     "daemon:stop": "bash scripts/daemon-stop.sh",
     "daemon:status": "bash scripts/daemon-status.sh",
     "token": "bash scripts/token.sh"
   },
-  "dependencies": {
-    "@github/copilot-sdk": "^0.1.0",
-    "node-pty": "^1.1.0",
-    "ws": "^8.20.0"
-  },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "@types/ws": "^8.18.1",
-    "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   },
   "engines": {

@@ -1,46 +1,20 @@
 import type { WebSocket } from "ws";
 import type { CopilotSession, PermissionRequest, SessionEvent } from "@github/copilot-sdk";
+import type { Inbound, PermissionMode } from "@tower/protocol";
+import { isPermissionMode, FORWARDED_EVENT_TYPES } from "@tower/protocol";
 import { getCopilotClient } from "./copilot.js";
-import { buildPolicy, isPermissionMode, type PermissionMode, type PermissionPolicy } from "./permissions.js";
+import { buildPolicy, type PermissionPolicy } from "./permissions.js";
 import { parseRules, RuleParseError, type ParsedRule } from "./rules.js";
 import { resolveWorkspace } from "./workspaces.js";
 import { verifyToken, type VerifiedToken } from "./tokens.js";
 import type { Router } from "./router.js";
+import { attachedSessions } from "./attached.js";
 import { KeepAliveManager, type KeepAlivePolicy } from "./keepAlive.js";
 
 interface InboundBase {
     type: string;
     id?: string | number;
 }
-
-type Inbound =
-    | { type: "hello"; token: string }
-    | {
-          type: "session.create";
-          id: string | number;
-          workspace: string;
-          model?: string;
-          permissionMode?: string;
-          allow?: string[];
-          deny?: string[];
-          keepAlive?: unknown;
-      }
-    | {
-          type: "session.resume";
-          id: string | number;
-          sessionId: string;
-          permissionMode?: string;
-          allow?: string[];
-          deny?: string[];
-          keepAlive?: unknown;
-      }
-    | { type: "session.list"; id: string | number }
-    | { type: "session.send"; sessionId: string; prompt: string }
-    | { type: "session.abort"; sessionId: string }
-    | { type: "session.keepAlive"; id: string | number; sessionId: string; keepAlive: unknown }
-    | { type: "session.delete"; id: string | number; sessionId: string }
-    | { type: "permission.reply"; requestId: string; decision: "approve" | "deny" }
-    | { type: "router.ask"; id: string | number; prompt: string };
 
 interface AttachedSession {
     session: CopilotSession;
@@ -49,18 +23,7 @@ interface AttachedSession {
     unsubscribers: Array<() => void>;
 }
 
-const FORWARDED_EVENTS = [
-    "assistant.message",
-    "assistant.message_delta",
-    "assistant.reasoning",
-    "assistant.reasoning_delta",
-    "tool.execution_start",
-    "tool.execution_complete",
-    "session.idle",
-    "session.error",
-    "session.warning",
-    "session.info",
-] as const;
+const FORWARDED_EVENTS = FORWARDED_EVENT_TYPES;
 
 export function handleConnection(ws: WebSocket, remote: string, router: Router | null, keepAlive: KeepAliveManager): void {
     let auth: VerifiedToken | null = null;
@@ -102,6 +65,7 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
 
         const attached: AttachedSession = { session, policy, unsubscribers };
         sessions.set(session.sessionId, attached);
+        attachedSessions.add(session.sessionId);
         return attached;
     };
 
@@ -109,6 +73,7 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
         const attached = sessions.get(sessionId);
         if (!attached) return;
         sessions.delete(sessionId);
+        attachedSessions.remove(sessionId);
         attached.policy.cancelAll();
         for (const off of attached.unsubscribers) {
             try { off(); } catch { /* ignore */ }
@@ -227,6 +192,25 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                 return;
             }
 
+            case "session.listAll": {
+                try {
+                    const client = await getCopilotClient();
+                    const list = await client.listSessions();
+                    const routerSid = router?.getSessionId() ?? null;
+                    const items = list.map((s) => ({
+                        sessionId: s.sessionId,
+                        workspace: s.context?.cwd,
+                        summary: s.summary,
+                        lastActivityAt: s.modifiedTime?.toISOString?.() ?? undefined,
+                        isActive: attachedSessions.has(s.sessionId) || s.sessionId === routerSid,
+                    }));
+                    respond(msg.id, true, items);
+                } catch (err) {
+                    respond(msg.id, false, (err as Error).message);
+                }
+                return;
+            }
+
             case "session.send": {
                 const attached = sessions.get(msg.sessionId);
                 if (!attached) return respond(undefined, false, `not attached to session ${msg.sessionId}`);
@@ -288,6 +272,11 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                 } catch (err) {
                     respond(msg.id, false, (err as Error).message);
                 }
+                return;
+            }
+
+            case "router.info": {
+                respond(msg.id, true, { sessionId: router?.getSessionId() ?? null });
                 return;
             }
 
