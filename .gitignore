@@ -5,6 +5,8 @@ packages/*/dist/
 data/
 logs/
 workspaces/
+plugins/
+data/copilot-home/
 .env
 *.log
 .DS_Store

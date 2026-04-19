@@ -14,33 +14,69 @@ Surfaces ── WSS + bearer ──► Gateway ──cliUrl──► copilot --h
 
 ## Prereqs
 
-- Node 20+
-- The `copilot` CLI installed and authenticated once on the host
-  (`copilot login` or `GH_TOKEN` env var).
+- Docker (with `docker compose` v2, or `docker-compose` v1 — the scripts
+  use the v2 form; swap if you're on v1).
+- For the TUI: Node 20+ and `bun` on the host.
 
 ## Setup
 
 ```sh
-git init
-cp .env.example .env        # tweak ports / paths if needed
-npm install
-npm run build
+cp .env.example .env        # tweak GATEWAY_HOST / GATEWAY_PORT if needed
+npm install                 # only needed for the host-side TUI
+npm run build               # typechecks the TUI / protocol
 ```
 
 ## Run
 
-```sh
-# 1. Start the headless Copilot daemon (bound to 127.0.0.1)
-npm run daemon:start
+The Copilot daemon and the gateway run together inside one Docker container.
+The daemon's `~/.copilot` lives on a named Docker volume — your host user's
+`~/.copilot` is **never** touched.
 
-# 2. Mint at least one bearer token for surfaces to use
+```sh
+# 1. Build the image (bakes in your UID/GID so bind mounts stay writable)
+npm run container:build
+
+# 2. Start the container in the background
+npm run container:start
+
+# 3. One-time: log the daemon's isolated ~/.copilot into a GitHub account
+npm run container:auth
+
+# 4. Mint at least one bearer token for surfaces to use
+#    (this writes to ./data on the host, which is bind-mounted into the
+#    container, so the gateway sees it immediately)
 npm run token mint -- my-laptop
 
-# 3. Start the gateway
-npm start                   # or: npm run dev (watch mode)
+# 5. Point the TUI at the container's gateway (host loopback)
+TOWER_URL=ws://127.0.0.1:8787 TOWER_TOKEN=<token> npm run tui
 ```
 
-Stop the daemon with `npm run daemon:stop`.
+Stop / inspect:
+
+```sh
+npm run container:stop      # docker compose down
+npm run container:status    # docker compose ps
+npm run container:logs      # follow daemon + gateway logs
+npm run container:shell     # debug shell inside the container
+```
+
+> If you previously ran the gateway directly on the host, stop it before
+> `container:start` (else port 8787 will collide). Older `npm run daemon:*`
+> scripts have been removed; the container is the only supported path now.
+
+### Isolation
+
+The daemon launches with `--config-dir /home/tower/.copilot` inside the
+container, and that path is mounted from the named volume
+`tower-copilot-home`. Concretely:
+
+- `client.listSessions()` only ever sees daemon-managed sessions — your
+  host-side interactive `copilot` sessions in `~/.copilot/sessions/` are
+  invisible to the gateway.
+- The daemon's GitHub auth is independent of your host user's, so you can
+  attach the container to a different account.
+- Bind mounts under `./data`, `./logs`, `./workspaces`, `./plugins` keep
+  tokens, logs, agent file edits, and plugins inspectable from the host.
 
 ## Bearer tokens
 
@@ -207,10 +243,12 @@ packages/
   protocol/   # @tower/protocol — shared WS message types
   gateway/    # @tower/gateway  — long-lived daemon + WS server
   tui/        # @tower/tui      — interactive terminal client
-scripts/      # daemon + token management shell scripts (run from repo root)
-data/         # tokens.json, state.json, daemon.pid (gitignored)
-logs/         # daemon + gateway logs (gitignored)
-workspaces/   # per-session cwd (gitignored)
+scripts/      # container + token management shell scripts (run from repo root)
+docker/       # entrypoint for the daemon+gateway container
+data/         # tokens.json, state.json (bind-mounted into container, gitignored)
+logs/         # daemon + gateway logs (bind-mounted, gitignored)
+workspaces/   # per-session cwd (bind-mounted, gitignored)
+plugins/      # copilot --plugin-dir (bind-mounted, gitignored)
 ```
 
 Common commands (from the repo root):
@@ -222,7 +260,7 @@ npm run typecheck            # typechecks all packages
 npm run dev                  # gateway in tsx watch mode
 npm start                    # gateway from compiled dist
 npm run tui                  # interactive TUI client
-npm run daemon:start|stop|status
+npm run container:build|start|stop|status|logs|auth|shell
 npm run token mint -- <label>
 ```
 
