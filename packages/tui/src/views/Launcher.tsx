@@ -3,13 +3,13 @@ import { useKeyboard } from "@opentui/react";
 import type { SessionListAllItem } from "@tower/protocol";
 import type { TowerClient } from "../client.js";
 import { LAUNCHER_HELP } from "../keys.js";
+import { useDoubleCtrlCQuit } from "../useDoubleCtrlCQuit.js";
 
 interface Props {
     client: TowerClient;
     routerSessionId: string | null;
     lastSessionId?: string | null;
     onOpen: (sessionId: string, initialPrompt?: string) => void;
-    onQuit: () => void;
 }
 
 // Lines starting with this character are routed to the router instead of
@@ -55,7 +55,7 @@ interface Row {
     isRouter: boolean;
 }
 
-export function Launcher({ client, routerSessionId, lastSessionId, onOpen, onQuit }: Props) {
+export function Launcher({ client, routerSessionId, lastSessionId, onOpen }: Props) {
     const [items, setItems] = useState<SessionListAllItem[] | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [routerError, setRouterError] = useState<string | null>(null);
@@ -211,9 +211,17 @@ export function Launcher({ client, routerSessionId, lastSessionId, onOpen, onQui
         void newSession(trimmed);
     };
 
+    const [quitHint, setQuitHint] = useState<string | null>(null);
+    const { pressedCtrlC } = useDoubleCtrlCQuit(setQuitHint);
+
     useKeyboard((key) => {
         if (showHelp) {
             setShowHelp(false);
+            return;
+        }
+        // Double-Ctrl+C exits — same semantics as Copilot CLI / the Session view.
+        if (key.ctrl && key.name === "c") {
+            pressedCtrlC();
             return;
         }
         // Tab toggles focus regardless of which side we're on. The Input
@@ -226,12 +234,6 @@ export function Launcher({ client, routerSessionId, lastSessionId, onOpen, onQui
         // ? toggles help unless the input is focused and being typed into.
         if (key.name === "?" && focus === "list") {
             setShowHelp(true);
-            return;
-        }
-        // q quits, but only when the input is empty (otherwise it's a literal
-        // character the user is typing into the filter).
-        if (key.name === "q" && input.length === 0) {
-            onQuit();
             return;
         }
         // Ctrl+N — explicit new session in default workspace.
@@ -381,10 +383,11 @@ export function Launcher({ client, routerSessionId, lastSessionId, onOpen, onQui
                 )}
             </box>
 
-            <box style={{ marginTop: 1 }}>
+            <box style={{ marginTop: 1, flexDirection: "column" }}>
                 <text fg="gray">
-                    {focus === "input" ? "input" : "list"} • tab: focus list • enter: new session ({ROUTER_PREFIX} = ask router) • ctrl+n: blank • q quit
+                    {focus === "input" ? "input" : "list"} • tab: focus list • enter: new session ({ROUTER_PREFIX} = ask router) • ctrl+n: blank • ctrl+c twice: quit
                 </text>
+                {quitHint ? <text fg="#fbbf24">{quitHint}</text> : null}
             </box>
         </box>
     );

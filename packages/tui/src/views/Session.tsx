@@ -4,6 +4,7 @@ import type { TextareaRenderable } from "@opentui/core";
 import type { EventMessage, PermissionRequestMessage, SessionEvent } from "@tower/protocol";
 import type { TowerClient } from "../client.js";
 import { getMarkdownStyle } from "../markdownStyle.js";
+import { useDoubleCtrlCQuit } from "../useDoubleCtrlCQuit.js";
 import { PermissionPrompt } from "./PermissionPrompt.js";
 import {
     applyEvent,
@@ -18,7 +19,6 @@ interface Props {
     client: TowerClient;
     sessionId: string;
     initialPrompt?: string;
-    onDetach: () => void;
 }
 
 interface PendingPermission {
@@ -191,7 +191,7 @@ const Entry = ({ entry, isFirst }: EntryProps) => {
     );
 };
 
-export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
+export function Session({ client, sessionId, initialPrompt }: Props) {
     const [entries, setEntries] = useState<TimelineEntry[]>([]);
     const [status, setStatus] = useState<AgentStatus>(initialStatus);
     const [error, setError] = useState<string | null>(null);
@@ -413,17 +413,15 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
     };
 
     const renderer = useRenderer();
+    const [quitHint, setQuitHint] = useState<string | null>(null);
+    const { pressedCtrlC } = useDoubleCtrlCQuit(setQuitHint);
 
     useKeyboard((key) => {
         if (pending) return;
-        if (key.name === "escape") {
-            onDetach();
-            return;
-        }
         if (key.ctrl && key.name === "c") {
-            // If the user has selected text (either inside the textarea or
-            // anywhere in the timeline), copy it to the system clipboard via
-            // OSC52 instead of aborting the turn.
+            // 1. If the user has selected text (textarea or document), copy
+            //    it via OSC52 — that's the most common reason to hit Ctrl+C
+            //    in a terminal.
             const ta = textareaRef.current;
             const taSel = ta?.hasSelection() ? ta.getSelectedText() : "";
             const docSel =
@@ -437,9 +435,17 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
                 });
                 return;
             }
-            client.notify({ type: "session.abort", sessionId });
-            apiRef.current!.push({ kind: "info", text: "(abort sent)" });
-            setStatus((prev) => ({ ...prev, phase: { kind: "idle" }, since: Date.now() }));
+            // 2. If a turn is in flight, abort it. We still arm the quit
+            //    counter so a *second* Ctrl+C right after the abort exits
+            //    the app — matching Copilot CLI's behaviour.
+            if (status.phase.kind !== "idle") {
+                client.notify({ type: "session.abort", sessionId });
+                apiRef.current!.push({ kind: "info", text: "(abort sent)" });
+                setStatus((prev) => ({ ...prev, phase: { kind: "idle" }, since: Date.now() }));
+            }
+            // 3. Arm / fire double-Ctrl+C quit. The hook handles the second
+            //    press → shutdown(0) and the timeout that disarms the hint.
+            pressedCtrlC();
             return;
         }
     });
@@ -567,11 +573,18 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
                 <textarea
                     ref={textareaRef as never}
                     focused={!pending}
-                    placeholder='Type a message — enter to send; shift/alt+enter, ctrl+j, or trailing "\" for newline; esc to detach; ctrl+c to abort'
+                    placeholder='Type a message — enter to send; shift/alt+enter, ctrl+j, or trailing "\" for newline; ctrl+c to abort, twice to quit'
                     keyBindings={textareaBindings as never}
                     style={{ flexGrow: 1 } as never}
                 />
             </box>
+            {quitHint ? (
+                <box style={{ paddingLeft: 1, paddingRight: 1 }}>
+                    <text>
+                        <span fg="#fbbf24">{quitHint}</span>
+                    </text>
+                </box>
+            ) : null}
         </box>
     );
 }

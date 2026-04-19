@@ -1,11 +1,10 @@
 /** Centralised TUI keybindings — referenced by views and the help screen. */
 export const KEYS = {
-    quit: "q",
     help: "?",
     refresh: "r",
     newSession: "n",
-    detach: "escape",
     abort: "ctrl+c",
+    quit: "ctrl+c×2",
     approve: "a",
     deny: "d",
     submit: "return",
@@ -23,11 +22,11 @@ export const LAUNCHER_HELP: KeyHelp[] = [
     { key: "enter", label: "open highlighted session, or ask router" },
     { key: "ctrl+n", label: "new session (workspace=default)" },
     { key: "?", label: "help" },
-    { key: "q", label: "quit (only when input is empty)" },
+    { key: "ctrl+c×2", label: "quit (press Ctrl+C twice within ~1.5s)" },
 ];
 
 export const SESSION_VIEW_HELP: KeyHelp[] = [
     { key: "type + enter", label: "send prompt" },
-    { key: "ctrl+c", label: "abort current run" },
-    { key: "esc", label: "detach (session keeps running)" },
+    { key: "ctrl+c", label: "abort current run / copy selection" },
+    { key: "ctrl+c×2", label: "quit (press Ctrl+C twice within ~1.5s)" },
 ];

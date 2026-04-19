@@ -4,7 +4,6 @@ import { Connecting } from "./views/Connecting.js";
 import { Launcher } from "./views/Launcher.js";
 import { Session } from "./views/Session.js";
 import { loadState, saveState } from "./state.js";
-import { shutdown } from "./shutdown.js";
 
 type View =
     | { kind: "connecting" }
@@ -61,11 +60,6 @@ export function App() {
         setView({ kind: "session", sessionId, initialPrompt });
     };
 
-    const backToLauncher = () => {
-        void saveState({ lastSessionId: lastSessionId ?? undefined, lastView: "launcher" });
-        setView({ kind: "launcher" });
-    };
-
     if (view.kind === "connecting" || view.kind === "error") {
         return <Connecting url={URL} error={view.kind === "error" ? view.error : connectError} />;
     }
@@ -79,7 +73,6 @@ export function App() {
                 routerSessionId={routerSessionId}
                 lastSessionId={lastSessionId}
                 onOpen={openSession}
-                onQuit={() => shutdown(0)}
             />
         );
     }
@@ -89,7 +82,6 @@ export function App() {
             client={client}
             sessionId={view.sessionId}
             initialPrompt={view.initialPrompt}
-            onDetach={backToLauncher}
         />
     );
 }
