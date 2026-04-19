@@ -296,7 +296,9 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
                 api.push({ kind: "info", text: `attached to ${sessionId}` });
                 if (initialPrompt && initialPrompt.trim().length > 0) {
                     const trimmed = initialPrompt.trim();
-                    api.push({ kind: "user", text: trimmed });
+                    // No local push — the daemon emits user.message which the
+                    // reducer turns into the timeline entry. Local push would
+                    // duplicate now that we forward user.message events.
                     client.notify({ type: "session.send", sessionId, prompt: trimmed });
                     setStatus((prev) => ({ ...prev, phase: { kind: "thinking" }, since: Date.now() }));
                 }
@@ -332,7 +334,8 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
     const sendPrompt = (raw: string) => {
         const trimmed = raw.trim();
         if (!trimmed) return;
-        apiRef.current!.push({ kind: "user", text: trimmed });
+        // The daemon will emit a user.message event back to us; the timeline
+        // reducer renders it. Pushing locally would duplicate the entry.
         client.notify({ type: "session.send", sessionId, prompt: trimmed });
         setStatus((prev) => ({ ...prev, phase: { kind: "thinking" }, since: Date.now() }));
     };
