@@ -11,9 +11,13 @@
     "dev": "npm run dev -w @tower/gateway",
     "start": "npm run start -w @tower/gateway",
     "tui": "npm run dev -w @tower/tui",
-    "daemon:start": "bash scripts/daemon-start.sh",
-    "daemon:stop": "bash scripts/daemon-stop.sh",
-    "daemon:status": "bash scripts/daemon-status.sh",
+    "container:build": "bash scripts/container-build.sh",
+    "container:start": "bash scripts/container-start.sh",
+    "container:stop": "bash scripts/container-stop.sh",
+    "container:status": "bash scripts/container-status.sh",
+    "container:logs": "bash scripts/container-logs.sh",
+    "container:auth": "bash scripts/container-auth.sh",
+    "container:shell": "bash scripts/container-shell.sh",
     "token": "bash scripts/token.sh"
   },
   "devDependencies": {
