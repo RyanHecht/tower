@@ -16,13 +16,14 @@ export interface KeyHelp {
     label: string;
 }
 
-export const SESSION_LIST_HELP: KeyHelp[] = [
-    { key: "↑/↓", label: "navigate" },
-    { key: "enter", label: "open session" },
-    { key: "n", label: "new session (workspace=default)" },
-    { key: "r", label: "refresh" },
+export const LAUNCHER_HELP: KeyHelp[] = [
+    { key: "type", label: "filter list / ask the router" },
+    { key: "tab", label: "toggle focus: input ⇄ list" },
+    { key: "↑/↓", label: "move list selection" },
+    { key: "enter", label: "open highlighted session, or ask router" },
+    { key: "ctrl+n", label: "new session (workspace=default)" },
     { key: "?", label: "help" },
-    { key: "q", label: "quit" },
+    { key: "q", label: "quit (only when input is empty)" },
 ];
 
 export const SESSION_VIEW_HELP: KeyHelp[] = [

@@ -8,6 +8,12 @@ const STATE_FILE = path.join(STATE_DIR, "state.json");
 export interface PersistedState {
     /** Last session the user opened — restored on next launch when present. */
     lastSessionId?: string;
+    /**
+     * Where the user last was when the TUI exited:
+     *   - "launcher": come back to the Launcher (default for first run).
+     *   - "session":  re-open `lastSessionId` directly if it still exists.
+     */
+    lastView?: "launcher" | "session";
 }
 
 export async function loadState(): Promise<PersistedState> {

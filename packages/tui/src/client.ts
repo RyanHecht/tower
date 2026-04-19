@@ -155,6 +155,23 @@ export class TowerClient extends EventEmitter {
         this.ws.send(JSON.stringify(msg));
     }
 
+    // ── Convenience wrappers around `request()` for typed callers ─────────
+
+    /** Ask the router to pick a session for this prompt. */
+    routerAsk<T = unknown>(prompt: string): Promise<T> {
+        return this.request<T>("router.ask", { prompt });
+    }
+
+    /** Get the router's own sessionId (or null if the router is disabled). */
+    routerInfo(): Promise<{ sessionId: string | null }> {
+        return this.request<{ sessionId: string | null }>("router.info");
+    }
+
+    /** List all on-disk sessions enriched with isActive + workspace metadata. */
+    listAllSessions<T = unknown>(): Promise<T[]> {
+        return this.request<T[]>("session.listAll");
+    }
+
     close(): void {
         if (this.ws) {
             try {

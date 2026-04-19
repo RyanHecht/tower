@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { TowerClient } from "./client.js";
 import { Connecting } from "./views/Connecting.js";
-import { SessionList } from "./views/SessionList.js";
+import { Launcher } from "./views/Launcher.js";
 import { Session } from "./views/Session.js";
 import { loadState, saveState } from "./state.js";
 
 type View =
     | { kind: "connecting" }
-    | { kind: "list" }
+    | { kind: "launcher" }
     | { kind: "session"; sessionId: string }
     | { kind: "error"; error: string };
 
@@ -18,6 +18,7 @@ export function App() {
     const [view, setView] = useState<View>({ kind: "connecting" });
     const [connectError, setConnectError] = useState<string | null>(null);
     const [lastSessionId, setLastSessionId] = useState<string | null>(null);
+    const [routerSessionId, setRouterSessionId] = useState<string | null>(null);
     const clientRef = useRef<TowerClient | null>(null);
 
     useEffect(() => {
@@ -29,9 +30,22 @@ export function App() {
         const client = new TowerClient({ url: URL, token: TOKEN });
         clientRef.current = client;
         Promise.all([client.connect(), loadState()])
-            .then(([, state]) => {
+            .then(async ([, state]) => {
                 setLastSessionId(state.lastSessionId ?? null);
-                setView({ kind: "list" });
+                // Best-effort: ask the gateway for the router's sessionId.
+                try {
+                    const info = await client.routerInfo();
+                    setRouterSessionId(info.sessionId);
+                } catch {
+                    /* router may not be available; continue without the marker */
+                }
+                // If the user was last in a specific session, drop them straight
+                // back into it. Otherwise (or on first run) open the Launcher.
+                if (state.lastView === "session" && state.lastSessionId) {
+                    setView({ kind: "session", sessionId: state.lastSessionId });
+                } else {
+                    setView({ kind: "launcher" });
+                }
             })
             .catch((err) => {
                 setConnectError((err as Error).message);
@@ -42,8 +56,13 @@ export function App() {
 
     const openSession = (sessionId: string) => {
         setLastSessionId(sessionId);
-        void saveState({ lastSessionId: sessionId });
+        void saveState({ lastSessionId: sessionId, lastView: "session" });
         setView({ kind: "session", sessionId });
+    };
+
+    const backToLauncher = () => {
+        void saveState({ lastSessionId: lastSessionId ?? undefined, lastView: "launcher" });
+        setView({ kind: "launcher" });
     };
 
     if (view.kind === "connecting" || view.kind === "error") {
@@ -52,11 +71,11 @@ export function App() {
 
     const client = clientRef.current!;
 
-    if (view.kind === "list") {
+    if (view.kind === "launcher") {
         return (
-            <SessionList
+            <Launcher
                 client={client}
-                routerSessionId={null}
+                routerSessionId={routerSessionId}
                 lastSessionId={lastSessionId}
                 onOpen={openSession}
                 onQuit={() => process.exit(0)}
@@ -68,7 +87,7 @@ export function App() {
         <Session
             client={client}
             sessionId={view.sessionId}
-            onDetach={() => setView({ kind: "list" })}
+            onDetach={backToLauncher}
         />
     );
 }
