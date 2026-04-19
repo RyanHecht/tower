@@ -253,6 +253,11 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                 return;
             }
 
+            case "router.info": {
+                respond(msg.id, true, { sessionId: router?.getSessionId() ?? null });
+                return;
+            }
+
             default:
                 respond((msg as InboundBase).id, false, `unknown message type: ${(msg as InboundBase).type}`);
         }

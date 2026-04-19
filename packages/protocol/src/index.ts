@@ -72,7 +72,8 @@ export type Inbound =
     | { type: "session.keepAlive"; id: string | number; sessionId: string; keepAlive: unknown }
     | { type: "session.delete"; id: string | number; sessionId: string }
     | { type: "permission.reply"; requestId: string; decision: "approve" | "deny" }
-    | { type: "router.ask"; id: string | number; prompt: string };
+    | { type: "router.ask"; id: string | number; prompt: string }
+    | { type: "router.info"; id: string | number };
 
 export type InboundType = Inbound["type"];
 
