@@ -129,16 +129,26 @@ export interface SessionListAllItem {
 
 /** Forwarded SessionEvent types — useful when surfaces want to filter. */
 export const FORWARDED_EVENT_TYPES = [
+    "assistant.turn_start",
+    "assistant.turn_end",
+    "assistant.intent",
     "assistant.message",
     "assistant.message_delta",
     "assistant.reasoning",
     "assistant.reasoning_delta",
+    "assistant.streaming_delta",
+    "tool.user_requested",
     "tool.execution_start",
+    "tool.execution_progress",
+    "tool.execution_partial_result",
     "tool.execution_complete",
     "session.idle",
     "session.error",
     "session.warning",
     "session.info",
+    "session.task_complete",
+    "session.title_changed",
+    "session.usage_info",
 ] as const;
 
 export type ForwardedEventType = (typeof FORWARDED_EVENT_TYPES)[number];
