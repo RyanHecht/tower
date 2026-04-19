@@ -1,0 +1,49 @@
+services:
+  tower:
+    build:
+      context: .
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    image: tower:local
+    container_name: tower
+    restart: unless-stopped
+    # Under rootless podman, map the container's `tower` user (uid 1000) to
+    # the host user running the engine, so bind mounts under ./data, ./logs,
+    # ./workspaces stay writable. Harmless on rootful podman; on Docker
+    # Engine, comment this out (Docker doesn't recognise "keep-id").
+    userns_mode: "keep-id"
+    env_file:
+      - .env
+    # Override anything from .env that doesn't make sense inside the container.
+    # The gateway must bind 0.0.0.0 so the host (outside the container) can
+    # reach it via the published port. The daemon stays loopback-only.
+    environment:
+      PROJECT_ROOT: /tower
+      GATEWAY_HOST: 0.0.0.0
+      GATEWAY_PORT: 8787
+      DAEMON_HOST: 127.0.0.1
+      DAEMON_PORT: 4321
+      COPILOT_HOME: /home/tower/.copilot
+    ports:
+      # Host-loopback only. Anyone on the LAN must not reach this port.
+      - "127.0.0.1:8787:8787"
+    volumes:
+      # Isolated copilot home — daemon's sessions + auth live here, NEVER
+      # in the host user's ~/.copilot.
+      - tower-copilot-home:/home/tower/.copilot
+      # Bind mounts so the host can mint tokens, inspect logs, edit files
+      # in agent workspaces, and drop in plugins.
+      - ./data:/tower/data
+      - ./logs:/tower/logs
+      - ./workspaces:/tower/workspaces
+      - ./plugins:/tower/plugins
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8787"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  tower-copilot-home:
