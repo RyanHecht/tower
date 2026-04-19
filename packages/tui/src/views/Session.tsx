@@ -42,35 +42,43 @@ const fmtBytes = (n: number): string => {
 };
 
 /**
- * Header glyph + color for each entry kind. We use a filled circle for
- * "primary" turns (user / assistant / intent) and an open circle for
- * sub-events (tools, info), so a glance at the timeline reads like a
- * stack of beats.
+ * Each entry kind decides how it renders. The legend:
+ *
+ *   ❯ in highlighted bold       → user prompt
+ *   ● yellow                    → new assistant message (Markdown body)
+ *   ● yellow (italic body)      → assistant.intent
+ *   (no header) italic gray     → reasoning trace
+ *   ○ cyan                      → tool call in flight
+ *   ● green                     → tool call succeeded
+ *   ● red                       → tool call failed
+ *   ● red                       → session error
+ *   ▲ yellow                    → session warning
+ *   · gray                      → quiet info line
  */
-const headerFor = (
-    kind: TimelineEntry["kind"],
-    toolStatus?: TimelineEntry["status"],
-): { glyph: string; color: string; label: string } => {
-    switch (kind) {
-        case "user":      return { glyph: "●", color: "green",   label: "You"       };
-        case "assistant": return { glyph: "●", color: "white",   label: "Assistant" };
-        case "intent":    return { glyph: "●", color: "magenta", label: "Intent"    };
-        case "reasoning": return { glyph: "○", color: "gray",    label: "Thinking"  };
+interface HeaderSpec {
+    glyph: string;
+    color: string;
+    /** Show no header line at all (entry body stands alone). */
+    inline?: boolean;
+}
+
+const headerFor = (entry: TimelineEntry): HeaderSpec | null => {
+    switch (entry.kind) {
+        case "user":      return null; // rendered inline with ❯ prefix
+        case "assistant": return { glyph: "●", color: "yellow"  };
+        case "intent":    return { glyph: "●", color: "yellow"  };
+        case "reasoning": return null; // rendered as bare italicised text
         case "tool": {
-            const glyph =
-                toolStatus === "ok"      ? "✓"
-              : toolStatus === "fail"    ? "✗"
-              : toolStatus === "running" ? "○"
-                                         : "·";
-            const color =
-                toolStatus === "ok"   ? "green"
-              : toolStatus === "fail" ? "red"
-                                      : "cyan";
-            return { glyph, color, label: "Tool" };
+            switch (entry.status) {
+                case "ok":      return { glyph: "●", color: "green" };
+                case "fail":    return { glyph: "●", color: "red"   };
+                case "running": return { glyph: "○", color: "cyan"  };
+                default:        return { glyph: "·", color: "gray"  };
+            }
         }
-        case "info":      return { glyph: "·", color: "gray",    label: "Info"      };
-        case "warning":   return { glyph: "▲", color: "yellow",  label: "Warning"   };
-        case "error":     return { glyph: "✗", color: "red",     label: "Error"     };
+        case "info":      return { glyph: "·", color: "gray"   };
+        case "warning":   return { glyph: "▲", color: "yellow" };
+        case "error":     return { glyph: "●", color: "red"    };
     }
 };
 
@@ -80,50 +88,98 @@ interface EntryProps {
 }
 
 const Entry = ({ entry, isFirst }: EntryProps) => {
-    const { glyph, color, label } = headerFor(entry.kind, entry.status);
-    const showMarkdown = entry.kind === "assistant" && entry.text.length > 0;
+    const marginTop = isFirst ? 0 : 1;
 
-    // For tool entries, the label is the tool name itself, in cyan.
-    const headerLabel = entry.kind === "tool" && entry.toolName ? entry.toolName : label;
+    // Plain user prompt — bold, prefixed with ❯, no header circle.
+    if (entry.kind === "user") {
+        return (
+            <box style={{ flexDirection: "column", marginTop }}>
+                <text>
+                    <span fg="cyan" attributes={1}>❯ </span>
+                    <span fg="white" attributes={1}>{entry.text}</span>
+                </text>
+            </box>
+        );
+    }
 
-    return (
-        <box style={{ flexDirection: "column", marginTop: isFirst ? 0 : 1 }}>
-            <text>
-                <span fg={color} attributes={1}>{glyph}</span>{" "}
-                <span fg={color} attributes={1}>{headerLabel}</span>
-                {entry.kind === "tool" && entry.text.length > entry.toolName!.length ? (
-                    <span fg="gray">{entry.text.slice(entry.toolName!.length)}</span>
+    // Reasoning — render as bare italic gray text with no header at all.
+    if (entry.kind === "reasoning") {
+        return (
+            <box style={{ flexDirection: "column", marginTop }}>
+                <text fg="gray">
+                    <i>{entry.text}</i>
+                    {entry.streaming ? <span fg="gray"> ▍</span> : null}
+                </text>
+            </box>
+        );
+    }
+
+    const header = headerFor(entry)!; // every other kind has a header
+
+    // Tool entries: header line is "● tool_name(args)" with the args in dim
+    // gray. Progress / result render below indented.
+    if (entry.kind === "tool") {
+        const args = entry.toolName ? entry.text.slice(entry.toolName.length) : entry.text;
+        return (
+            <box style={{ flexDirection: "column", marginTop }}>
+                <text>
+                    <span fg={header.color} attributes={1}>{header.glyph} </span>
+                    <span fg={header.color}>{entry.toolName ?? "tool"}</span>
+                    <span fg="gray">{args}</span>
+                </text>
+                {entry.progress ? (
+                    <box style={{ paddingLeft: 2 }}>
+                        <text fg="gray">↳ {entry.progress}</text>
+                    </box>
                 ) : null}
-                {entry.streaming ? <span fg="gray"> ▍</span> : null}
+                {entry.result ? (
+                    <box style={{ paddingLeft: 2 }}>
+                        <text fg="gray">{entry.result}</text>
+                    </box>
+                ) : null}
+            </box>
+        );
+    }
+
+    // Assistant message — header dot followed by Markdown body indented under it.
+    if (entry.kind === "assistant") {
+        return (
+            <box style={{ flexDirection: "column", marginTop }}>
+                <text>
+                    <span fg={header.color} attributes={1}>{header.glyph}</span>
+                </text>
+                <box style={{ paddingLeft: 2 }}>
+                    {entry.text.length > 0 ? (
+                        <markdown
+                            content={entry.text}
+                            syntaxStyle={getMarkdownStyle()}
+                            streaming={entry.streaming === true}
+                        />
+                    ) : null}
+                </box>
+            </box>
+        );
+    }
+
+    // Assistant intent — single italic yellow line, no body.
+    if (entry.kind === "intent") {
+        return (
+            <box style={{ flexDirection: "column", marginTop }}>
+                <text>
+                    <span fg={header.color} attributes={1}>{header.glyph} </span>
+                    <span fg={header.color}><i>{entry.text}</i></span>
+                </text>
+            </box>
+        );
+    }
+
+    // info / warning / error — single line, header inline with the text.
+    return (
+        <box style={{ flexDirection: "column", marginTop }}>
+            <text>
+                <span fg={header.color} attributes={1}>{header.glyph} </span>
+                <span fg={header.color}>{entry.text}</span>
             </text>
-
-            {/* Body — indented two spaces under the header dot. */}
-            {showMarkdown ? (
-                <box style={{ paddingLeft: 2, marginTop: 0 }}>
-                    <markdown
-                        content={entry.text}
-                        syntaxStyle={getMarkdownStyle()}
-                        streaming={entry.streaming === true}
-                    />
-                </box>
-            ) : entry.kind === "assistant" ? null : entry.kind === "tool" ? null : (
-                <box style={{ paddingLeft: 2 }}>
-                    <text fg={entry.kind === "user" ? "white" : entry.kind === "reasoning" ? "gray" : color}>
-                        {entry.text}
-                    </text>
-                </box>
-            )}
-
-            {entry.progress ? (
-                <box style={{ paddingLeft: 2 }}>
-                    <text fg="gray">↳ {entry.progress}</text>
-                </box>
-            ) : null}
-            {entry.result ? (
-                <box style={{ paddingLeft: 2 }}>
-                    <text fg="gray">{entry.result}</text>
-                </box>
-            ) : null}
         </box>
     );
 };
