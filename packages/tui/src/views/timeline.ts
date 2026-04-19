@@ -115,6 +115,28 @@ const summariseResult = (result: unknown): string | undefined => {
     return undefined;
 };
 
+const REPORT_INTENT_TOOL = "report_intent";
+
+const setIntent = (api: TimelineApi, intent: string) => {
+    if (!intent) return;
+    api.setStatus((prev) => ({
+        ...prev,
+        lastIntent: intent,
+        phase:
+            prev.phase.kind === "idle" || prev.phase.kind === "thinking"
+                ? { kind: "thinking", detail: intent }
+                : prev.phase,
+    }));
+};
+
+/** Pull the intent text out of a report_intent tool-call's arguments. */
+const extractIntentArg = (args: unknown): string => {
+    if (!args || typeof args !== "object") return "";
+    const obj = args as Record<string, unknown>;
+    const v = obj["intent"];
+    return typeof v === "string" ? v : "";
+};
+
 /**
  * Apply a single SessionEvent to the timeline + status. Pure-ish: all side
  * effects go through the TimelineApi (which the React component wraps around
@@ -145,20 +167,10 @@ export const applyEvent = (api: TimelineApi, event: SessionEvent): void => {
 
         case "assistant.intent": {
             const intent = String(data["intent"] ?? "");
-            if (!intent) return;
             // Intent is shown in the status bar's detail line, not as a
             // standalone timeline entry — it would just duplicate what the
             // spinner already says.
-            api.setStatus((prev) => ({
-                ...prev,
-                lastIntent: intent,
-                phase:
-                    prev.phase.kind === "idle"
-                        ? { kind: "thinking", detail: intent }
-                        : prev.phase.kind === "thinking"
-                          ? { kind: "thinking", detail: intent }
-                          : prev.phase,
-            }));
+            setIntent(api, intent);
             return;
         }
 
@@ -249,6 +261,14 @@ export const applyEvent = (api: TimelineApi, event: SessionEvent): void => {
             }> | undefined) ?? [];
             for (const req of toolRequests) {
                 if (maps.tools.has(req.toolCallId)) continue;
+                // report_intent is not a real tool — its argument is the
+                // agent's narrated intent, which already drives the status
+                // bar. Skip the timeline entry entirely.
+                if (req.name === REPORT_INTENT_TOOL) {
+                    setIntent(api, extractIntentArg(req.arguments));
+                    maps.toolNames.set(req.toolCallId, req.name);
+                    continue;
+                }
                 const header = `${req.name}(${summariseArgs(req.arguments)})`;
                 const id = api.push({
                     kind: "tool",
@@ -278,6 +298,12 @@ export const applyEvent = (api: TimelineApi, event: SessionEvent): void => {
         case "tool.execution_start": {
             const toolCallId = String(data["toolCallId"] ?? "");
             const toolName = String(data["toolName"] ?? "tool");
+            // report_intent surfaces only via the status bar.
+            if (toolName === REPORT_INTENT_TOOL) {
+                setIntent(api, extractIntentArg(data["arguments"]));
+                maps.toolNames.set(toolCallId, toolName);
+                return;
+            }
             const args = summariseArgs(data["arguments"]);
             const header = `${toolName}(${args})`;
             const existing = maps.tools.get(toolCallId);
@@ -328,6 +354,9 @@ export const applyEvent = (api: TimelineApi, event: SessionEvent): void => {
 
         case "tool.execution_complete": {
             const toolCallId = String(data["toolCallId"] ?? "");
+            const toolName = maps.toolNames.get(toolCallId);
+            // report_intent has no visible entry to update; nothing to do.
+            if (toolName === REPORT_INTENT_TOOL) return;
             const success = data["success"] !== false && !data["error"];
             const result = summariseResult(data["result"]);
             const existing = maps.tools.get(toolCallId);
@@ -340,7 +369,7 @@ export const applyEvent = (api: TimelineApi, event: SessionEvent): void => {
             }
             // Drop the per-tool phase. Whatever the agent does next will set its own.
             api.setStatus((prev) =>
-                prev.phase.kind === "tool" && prev.phase.name === (maps.toolNames.get(toolCallId) ?? prev.phase.name)
+                prev.phase.kind === "tool" && prev.phase.name === (toolName ?? prev.phase.name)
                     ? { ...prev, phase: { kind: "thinking", detail: prev.lastIntent } }
                     : prev,
             );
