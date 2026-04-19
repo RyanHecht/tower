@@ -305,6 +305,9 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
     const [inputRows, setInputRows] = useState(1);
     const MAX_INPUT_ROWS = 10;
 
+    const pendingRef = useRef<PendingPermission | null>(null);
+    useEffect(() => { pendingRef.current = pending; }, [pending]);
+
     // Wire up textarea submit imperatively — the React wrapper doesn't bridge
     // onSubmit for the textarea, so we set the listener via the ref and pull
     // the buffer's contents on demand.
@@ -336,9 +339,12 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
             setInputRows(Math.min(MAX_INPUT_ROWS, Math.max(1, ta.lineCount)));
         };
         // Keep keyboard focus pinned to the prompt no matter where the user
-        // clicks. Mouse-wheel scrolling on the timeline is dispatched by hit
-        // position rather than focus, so this doesn't break scrolling.
+        // clicks — except while a permission dialog is up, since that owns
+        // the [a]/[d] hotkeys and clicks-to-approve target. Mouse-wheel
+        // scrolling on the timeline is dispatched by hit position rather
+        // than focus, so this doesn't break scrolling either way.
         const refocus = () => {
+            if (pendingRef.current) return;
             queueMicrotask(() => ta.focus());
         };
         ta.on("blurred", refocus);
@@ -470,38 +476,40 @@ export function Session({ client, sessionId, initialPrompt, onDetach }: Props) {
                 </box>
             ) : null}
 
+            {/* Permission dialog gets its own row, distinct from the
+                status bar above and the input below. */}
             {pending ? (
                 <PermissionPrompt
                     requestId={pending.requestId}
                     request={pending.request}
                     onAnswer={answerPermission}
                 />
-            ) : (
-                /* Prompt — only top + bottom borders, height tracks content. */
-                <box
-                    style={{
-                        border: ["top", "bottom"],
-                        borderColor: "gray",
-                        paddingLeft: 1,
-                        paddingRight: 1,
-                        flexDirection: "row",
-                        height: inputRows + 2,
-                    }}
-                >
-                    <box style={{ width: 2, paddingTop: 0 }}>
-                        <text>
-                            <span fg="#d4d4d8">❯</span>
-                        </text>
-                    </box>
-                    <textarea
-                        ref={textareaRef as never}
-                        focused
-                        placeholder='Type a message — enter to send; shift/alt+enter, ctrl+j, or trailing "\" for newline; esc to detach; ctrl+c to abort'
-                        keyBindings={textareaBindings as never}
-                        style={{ flexGrow: 1 } as never}
-                    />
+            ) : null}
+
+            {/* Prompt — only top + bottom borders, height tracks content. */}
+            <box
+                style={{
+                    border: ["top", "bottom"],
+                    borderColor: "gray",
+                    paddingLeft: 1,
+                    paddingRight: 1,
+                    flexDirection: "row",
+                    height: inputRows + 2,
+                }}
+            >
+                <box style={{ width: 2, paddingTop: 0 }}>
+                    <text>
+                        <span fg="#d4d4d8">❯</span>
+                    </text>
                 </box>
-            )}
+                <textarea
+                    ref={textareaRef as never}
+                    focused={!pending}
+                    placeholder='Type a message — enter to send; shift/alt+enter, ctrl+j, or trailing "\" for newline; esc to detach; ctrl+c to abort'
+                    keyBindings={textareaBindings as never}
+                    style={{ flexGrow: 1 } as never}
+                />
+            </box>
         </box>
     );
 }

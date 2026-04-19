@@ -140,7 +140,9 @@ export const applyEvent = (api: TimelineApi, event: SessionEvent): void => {
         case "assistant.intent": {
             const intent = String(data["intent"] ?? "");
             if (!intent) return;
-            api.push({ kind: "intent", text: intent });
+            // Intent is shown in the status bar's detail line, not as a
+            // standalone timeline entry — it would just duplicate what the
+            // spinner already says.
             api.setStatus((prev) => ({
                 ...prev,
                 lastIntent: intent,
