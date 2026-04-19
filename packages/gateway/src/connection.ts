@@ -1,7 +1,7 @@
 import type { WebSocket } from "ws";
 import type { PermissionRequest, PermissionRequestResult } from "@github/copilot-sdk";
 import type { Inbound, PermissionMode } from "@tower/protocol";
-import { isPermissionMode } from "@tower/protocol";
+import { DEFAULT_PERMISSION_MODE, isPermissionMode } from "@tower/protocol";
 import { getCopilotClient } from "./copilot.js";
 import { buildPolicy } from "./permissions.js";
 import { parseRules, RuleParseError, type ParsedRule } from "./rules.js";
@@ -85,7 +85,7 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                 return;
 
             case "session.create": {
-                const mode: PermissionMode = isPermissionMode(msg.permissionMode) ? msg.permissionMode : "prompt";
+                const mode: PermissionMode = isPermissionMode(msg.permissionMode) ? msg.permissionMode : DEFAULT_PERMISSION_MODE;
                 let allow: ParsedRule[];
                 let deny: ParsedRule[];
                 let kaPolicy: KeepAlivePolicy;
@@ -141,7 +141,7 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
             }
 
             case "session.resume": {
-                const mode: PermissionMode = isPermissionMode(msg.permissionMode) ? msg.permissionMode : "prompt";
+                const mode: PermissionMode = isPermissionMode(msg.permissionMode) ? msg.permissionMode : DEFAULT_PERMISSION_MODE;
                 let allow: ParsedRule[];
                 let deny: ParsedRule[];
                 // keepAlive is optional on resume — undefined means "leave whatever

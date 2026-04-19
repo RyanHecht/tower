@@ -5,8 +5,18 @@ import { evaluateRules, type ParsedRule } from "./rules.js";
 
 export { type PermissionMode, PERMISSION_MODES, isPermissionMode } from "@tower/protocol";
 
-/** Tools considered low-risk in "safe" mode. Everything else is prompted. */
-const SAFE_KINDS = new Set<PermissionRequest["kind"]>(["read"]);
+/** Tools considered low-risk in "safe" mode. Everything else is prompted.
+ *
+ *  Tower runs the agent inside a container with an isolated filesystem, so
+ *  local-only operations (`read`, `write`, `shell`, `custom-tool`) can't
+ *  damage the host. We still prompt for `url` (network egress) and `mcp`
+ *  (external services) since those reach outside the sandbox. */
+const SAFE_KINDS = new Set<PermissionRequest["kind"]>([
+    "read",
+    "write",
+    "shell",
+    "custom-tool",
+]);
 
 /** Bridge between the SDK's onPermissionRequest callback and an async surface
  *  prompt. The gateway holds one of these per session. */

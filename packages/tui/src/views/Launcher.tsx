@@ -148,7 +148,6 @@ export function Launcher({ client, routerSessionId, lastSessionId, onOpen }: Pro
                 try {
                     const created = await client.request<{ sessionId: string }>("session.create", {
                         workspace,
-                        permissionMode: "prompt",
                     });
                     onOpen(created.sessionId);
                 } catch (err) {
@@ -170,7 +169,6 @@ export function Launcher({ client, routerSessionId, lastSessionId, onOpen }: Pro
         try {
             const created = await client.request<{ sessionId: string }>("session.create", {
                 workspace: "default",
-                permissionMode: "prompt",
             });
             onOpen(created.sessionId, initialPrompt);
         } catch (err) {

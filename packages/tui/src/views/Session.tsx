@@ -267,7 +267,7 @@ export function Session({ client, sessionId, initialPrompt }: Props) {
 
         (async () => {
             try {
-                await client.request("session.resume", { sessionId, permissionMode: "prompt" });
+                await client.request("session.resume", { sessionId });
                 if (cancelled) return;
                 // Replay everything the daemon has on disk for this session
                 // so the timeline isn't blank when we attach to an existing

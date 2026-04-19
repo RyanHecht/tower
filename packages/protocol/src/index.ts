@@ -14,12 +14,17 @@ import type { PermissionRequest, SessionEvent } from "@github/copilot-sdk";
 
 /**
  *   yolo   — auto-approve every permission request.
- *   safe   — auto-approve `read` requests; prompt the surface for everything else.
- *   prompt — relay every request to the surface (default).
+ *   safe   — auto-approve container-local operations (read, write, shell,
+ *            custom-tool); prompt for anything that reaches outside the
+ *            container (url, mcp). Default.
+ *   prompt — relay every request to the surface.
  */
 export type PermissionMode = "yolo" | "safe" | "prompt";
 
 export const PERMISSION_MODES: readonly PermissionMode[] = ["yolo", "safe", "prompt"];
+
+/** Mode used when a client doesn't specify one. */
+export const DEFAULT_PERMISSION_MODE: PermissionMode = "safe";
 
 export function isPermissionMode(s: unknown): s is PermissionMode {
     return typeof s === "string" && (PERMISSION_MODES as readonly string[]).includes(s);
