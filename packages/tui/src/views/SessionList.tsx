@@ -16,6 +16,7 @@ interface SessionRow {
 interface Props {
     client: TowerClient;
     routerSessionId: string | null;
+    lastSessionId?: string | null;
     onOpen: (sessionId: string) => void;
     onQuit: () => void;
 }
@@ -35,7 +36,7 @@ const fmtAge = (d: string | Date | undefined): string => {
     return `${Math.floor(h / 24)}d`;
 };
 
-export function SessionList({ client, routerSessionId, onOpen, onQuit }: Props) {
+export function SessionList({ client, routerSessionId, lastSessionId, onOpen, onQuit }: Props) {
     const [sessions, setSessions] = useState<SessionRow[] | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [showHelp, setShowHelp] = useState(false);
@@ -46,7 +47,9 @@ export function SessionList({ client, routerSessionId, onOpen, onQuit }: Props) 
         try {
             const list = await client.request<SessionRow[]>("session.list");
             setSessions(list);
-            setSelectedIndex(0);
+            // Restore the last-opened session as the initial selection when present.
+            const restoreIdx = lastSessionId ? list.findIndex((s) => s.sessionId === lastSessionId) : -1;
+            setSelectedIndex(restoreIdx >= 0 ? restoreIdx : 0);
         } catch (err) {
             setError((err as Error).message);
         }

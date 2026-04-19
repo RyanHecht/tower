@@ -3,6 +3,7 @@ import { TowerClient } from "./client.js";
 import { Connecting } from "./views/Connecting.js";
 import { SessionList } from "./views/SessionList.js";
 import { Session } from "./views/Session.js";
+import { loadState, saveState } from "./state.js";
 
 type View =
     | { kind: "connecting" }
@@ -16,6 +17,7 @@ const TOKEN = process.env["TOWER_TOKEN"] ?? "";
 export function App() {
     const [view, setView] = useState<View>({ kind: "connecting" });
     const [connectError, setConnectError] = useState<string | null>(null);
+    const [lastSessionId, setLastSessionId] = useState<string | null>(null);
     const clientRef = useRef<TowerClient | null>(null);
 
     useEffect(() => {
@@ -26,15 +28,23 @@ export function App() {
         }
         const client = new TowerClient({ url: URL, token: TOKEN });
         clientRef.current = client;
-        client
-            .connect()
-            .then(() => setView({ kind: "list" }))
+        Promise.all([client.connect(), loadState()])
+            .then(([, state]) => {
+                setLastSessionId(state.lastSessionId ?? null);
+                setView({ kind: "list" });
+            })
             .catch((err) => {
                 setConnectError((err as Error).message);
                 setView({ kind: "error", error: (err as Error).message });
             });
         return () => client.close();
     }, []);
+
+    const openSession = (sessionId: string) => {
+        setLastSessionId(sessionId);
+        void saveState({ lastSessionId: sessionId });
+        setView({ kind: "session", sessionId });
+    };
 
     if (view.kind === "connecting" || view.kind === "error") {
         return <Connecting url={URL} error={view.kind === "error" ? view.error : connectError} />;
@@ -47,7 +57,8 @@ export function App() {
             <SessionList
                 client={client}
                 routerSessionId={null}
-                onOpen={(sessionId) => setView({ kind: "session", sessionId })}
+                lastSessionId={lastSessionId}
+                onOpen={openSession}
                 onQuit={() => process.exit(0)}
             />
         );
