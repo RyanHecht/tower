@@ -22,6 +22,7 @@ import {
 import { KeepAliveManager, type KeepAlivePolicy } from "./keepAlive.js";
 import type { CronScheduler } from "./crons.js";
 import { launchDisplay, getDisplay, destroyDisplay, listDisplays } from "./displayManager.js";
+import { buildSessionConfig } from "./sessionConfig.js";
 
 interface InboundBase {
     type: string;
@@ -103,14 +104,19 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                 try {
                     const cwd = await resolveWorkspace(msg.workspace);
                     const client = await getCopilotClient();
-                    // Build the policy first; sessionId only exists post-create
-                    // so we wire its onPermissionRequest via a closure that
-                    // captures the handler.
                     let handler: ((req: PermissionRequest) => Promise<PermissionRequestResult>) | null = null;
+                    // Session config at create time — no display exists yet,
+                    // so buildSessionConfig returns only user/built-in servers.
+                    // Playwright gets added dynamically via display.launch.
+                    const cfg = buildSessionConfig("");
                     const session = await client.createSession({
                         ...(msg.model ? { model: msg.model } : {}),
                         workingDirectory: cwd,
                         onPermissionRequest: (req) => handler!(req),
+                        ...(Object.keys(cfg.mcpServers).length > 0 ? { mcpServers: cfg.mcpServers } : {}),
+                        ...(cfg.skillDirectories.length > 0 ? { skillDirectories: cfg.skillDirectories } : {}),
+                        ...(cfg.disabledSkills.length > 0 ? { disabledSkills: cfg.disabledSkills } : {}),
+                        ...(cfg.customAgents.length > 0 ? { customAgents: cfg.customAgents } : {}),
                     });
                     const policy = buildSessionPolicy(session.sessionId, mode, allow, deny);
                     handler = policy.handler;
@@ -163,18 +169,18 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                     let session;
                     let policy;
                     if (existing) {
-                        // Already attached by some other connection (or the
-                        // same one mid-prompt-replay). Reuse its policy and
-                        // SDK handle; just register as a new subscriber.
                         session = existing;
                         policy = buildSessionPolicy(msg.sessionId, mode, allow, deny);
-                        // policy is unused once register() finds an existing
-                        // entry — it'll keep the original. That's fine.
                     } else {
                         const client = await getCopilotClient();
                         let handler: ((req: PermissionRequest) => Promise<PermissionRequestResult>) | null = null;
+                        const cfg = buildSessionConfig(msg.sessionId);
                         session = await client.resumeSession(msg.sessionId, {
                             onPermissionRequest: (req) => handler!(req),
+                            ...(Object.keys(cfg.mcpServers).length > 0 ? { mcpServers: cfg.mcpServers } : {}),
+                            ...(cfg.skillDirectories.length > 0 ? { skillDirectories: cfg.skillDirectories } : {}),
+                            ...(cfg.disabledSkills.length > 0 ? { disabledSkills: cfg.disabledSkills } : {}),
+                            ...(cfg.customAgents.length > 0 ? { customAgents: cfg.customAgents } : {}),
                         });
                         policy = buildSessionPolicy(msg.sessionId, mode, allow, deny);
                         handler = policy.handler;

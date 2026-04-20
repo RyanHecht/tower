@@ -7,6 +7,7 @@ import { resolveWorkspace } from "./workspaces.js";
 import { KeepAliveManager } from "./keepAlive.js";
 import { CronScheduler } from "./crons.js";
 import { destroyAllDisplays } from "./displayManager.js";
+import { loadUserSessionConfig } from "./sessionConfig.js";
 import { StateStore } from "./state.js";
 
 async function ensureDirs(): Promise<void> {
@@ -54,6 +55,7 @@ async function main(): Promise<void> {
 
     const store = new StateStore();
     await store.load();
+    await loadUserSessionConfig();
 
     const client = await getCopilotClient();
     const keepAlive = new KeepAliveManager(client, store);
