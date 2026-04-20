@@ -1,14 +1,15 @@
 # syntax=docker/dockerfile:1.6
 #
-# Tower: copilot --headless daemon + @tower/gateway in one container.
-# The daemon runs against an isolated $COPILOT_HOME so its sessions/auth
-# never mix with the host user's ~/.copilot.
+# Tower: copilot --headless daemon + @tower/gateway + virtual display in one
+# container. The daemon runs against an isolated $COPILOT_HOME so its
+# sessions/auth never mix with the host user's ~/.copilot.
 #
 FROM node:20-bookworm-slim
 
 ARG UID=1000
 ARG GID=1000
 ARG COPILOT_VERSION=1.0.32
+ARG NOVNC_VERSION=1.6.0
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -17,10 +18,34 @@ ENV DEBIAN_FRONTEND=noninteractive
 #   ca-certs   — TLS for npm + copilot
 #   curl       — healthcheck / debug
 #   netcat-openbsd — entrypoint waits for daemon port to come up
+#
+# Virtual display (always-on headed browser):
+#   xvfb       — X virtual framebuffer (in-memory display)
+#   x11vnc     — VNC server attached to Xvfb
+#   fluxbox    — minimal window manager
+#   xdotool    — X11 automation (click, type, window management)
+#
+# Browser:
+#   chromium           — headed browser for web automation
+#   chromium-sandbox   — Chromium's SUID sandbox helper
+#   fonts-liberation   — metric-equivalent fonts for web rendering
+#   fonts-noto-color-emoji — emoji support
+#
+# noVNC deps:
+#   python3, python3-websockify — WebSocket→TCP bridge for noVNC
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         bash ca-certificates curl netcat-openbsd \
+        xvfb x11vnc fluxbox xdotool \
+        chromium chromium-sandbox fonts-liberation fonts-noto-color-emoji \
+        python3 python3-websockify \
     && rm -rf /var/lib/apt/lists/*
+
+# noVNC — browser-based VNC viewer served as static HTML+JS.
+RUN curl -fsSL "https://github.com/novnc/noVNC/archive/refs/tags/v${NOVNC_VERSION}.tar.gz" \
+    | tar -xz -C /opt \
+    && mv "/opt/noVNC-${NOVNC_VERSION}" /opt/noVNC \
+    && ln -s /opt/noVNC/vnc.html /opt/noVNC/index.html
 
 # Install Copilot CLI globally. Pinned for reproducibility.
 RUN npm install -g "@github/copilot@${COPILOT_VERSION}"
@@ -80,8 +105,12 @@ ENV PROJECT_ROOT=/tower \
     DAEMON_HOST=127.0.0.1 \
     DAEMON_PORT=4321 \
     COPILOT_HOME=/home/tower/.copilot \
-    NODE_ENV=production
+    NODE_ENV=production \
+    DISPLAY=:99 \
+    CHROME_PATH=/usr/bin/chromium \
+    CHROMIUM_FLAGS="--no-sandbox --disable-dev-shm-usage"
 
-EXPOSE 8787
+# 8787 = gateway (HTTP + WS), 6080 = noVNC (browser-based desktop viewer)
+EXPOSE 8787 6080
 
 ENTRYPOINT ["/usr/local/bin/tower-entrypoint"]

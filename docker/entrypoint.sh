@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Tower container entrypoint.
 #
-# Starts `copilot --headless` against an isolated --config-dir, waits for it
-# to listen, then runs the gateway in the foreground. A trap forwards
-# SIGTERM/SIGINT to the daemon child before the container exits.
+# Starts:
+#   1. Virtual display (Xvfb + fluxbox + x11vnc + noVNC) for headed browser
+#   2. `copilot --headless` against an isolated --config-dir
+#   3. The gateway in the foreground
+#
+# A trap forwards SIGTERM/SIGINT to children before the container exits.
 set -euo pipefail
 
 : "${PROJECT_ROOT:=/tower}"
@@ -12,6 +15,8 @@ set -euo pipefail
 : "${DAEMON_PORT:=4321}"
 : "${GATEWAY_HOST:=0.0.0.0}"
 : "${GATEWAY_PORT:=8787}"
+: "${DISPLAY:=:99}"
+: "${TOWER_DISPLAY_RESOLUTION:=1280x720x24}"
 
 mkdir -p \
     "$COPILOT_HOME" \
@@ -21,6 +26,37 @@ mkdir -p \
     "$PROJECT_ROOT/plugins"
 
 DAEMON_LOG="$PROJECT_ROOT/logs/daemon.log"
+DISPLAY_LOG="$PROJECT_ROOT/logs/display.log"
+
+# ── Virtual display ─────────────────────────────────────────────────────
+# Always-on headed browser environment. The agent uses DISPLAY=:99 to run
+# Chromium with a real GUI — essential for avoiding bot detection.
+# noVNC on port 6080 lets a human watch/interact via any browser.
+
+echo "[entrypoint] starting virtual display on ${DISPLAY} (${TOWER_DISPLAY_RESOLUTION})"
+
+Xvfb "${DISPLAY}" -screen 0 "${TOWER_DISPLAY_RESOLUTION}" -ac +extension GLX \
+    >>"$DISPLAY_LOG" 2>&1 &
+XVFB_PID=$!
+sleep 1
+
+if ! kill -0 "$XVFB_PID" 2>/dev/null; then
+    echo "[entrypoint] Xvfb failed to start; tail of $DISPLAY_LOG:" >&2
+    tail -n 20 "$DISPLAY_LOG" >&2 || true
+    exit 1
+fi
+
+fluxbox -display "${DISPLAY}" >>"$DISPLAY_LOG" 2>&1 &
+
+x11vnc -display "${DISPLAY}" -nopw -listen 0.0.0.0 -forever -shared \
+    -rfbport 5900 >>"$DISPLAY_LOG" 2>&1 &
+
+websockify --web /opt/noVNC 0.0.0.0:6080 localhost:5900 \
+    >>"$DISPLAY_LOG" 2>&1 &
+
+echo "[entrypoint] noVNC available at http://localhost:6080"
+
+# ── Copilot daemon ──────────────────────────────────────────────────────
 
 echo "[entrypoint] starting copilot --headless on ${DAEMON_HOST}:${DAEMON_PORT}"
 echo "[entrypoint]   config-dir: $COPILOT_HOME"
