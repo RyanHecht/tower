@@ -1,6 +1,10 @@
 import type { Tool } from "@github/copilot-sdk";
+import { existsSync } from "node:fs";
+import { cp, mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import { launchDisplay, getDisplay, destroyDisplay } from "./displayManager.js";
 import { setDisplayUrl } from "./sessionAttachments.js";
+import { config } from "./config.js";
 import type { StateStore } from "./state.js";
 
 /**
@@ -9,6 +13,21 @@ import type { StateStore } from "./state.js";
  * These run inside the gateway process (not the daemon) and can access
  * gateway-managed resources like the display manager.
  */
+
+/** Get or create the per-session Chromium profile directory. If a template
+ *  profile exists, copy it for first-time sessions to inherit logins. */
+async function ensureProfileDir(sessionId: string): Promise<string> {
+    const profileDir = join(config.paths.chromiumProfiles, sessionId);
+    if (existsSync(profileDir)) return profileDir;
+
+    if (existsSync(config.paths.chromiumTemplate)) {
+        await cp(config.paths.chromiumTemplate, profileDir, { recursive: true });
+        console.log(`[display] seeded Chromium profile for ${sessionId} from template`);
+    } else {
+        await mkdir(profileDir, { recursive: true });
+    }
+    return profileDir;
+}
 
 export function buildSessionTools(store: StateStore): Tool[] {
     return [
@@ -29,21 +48,29 @@ export function buildSessionTools(store: StateStore): Tool[] {
                 const { sessionId } = invocation;
                 try {
                     const info = await launchDisplay(sessionId);
+                    const profileDir = await ensureProfileDir(sessionId);
                     setDisplayUrl(sessionId, info.noVncUrl);
                     store.setDisplay(sessionId, true);
                     return {
                         status: "ok",
                         display: info.display,
                         noVncUrl: info.noVncUrl,
+                        chromiumProfileDir: profileDir,
                         message:
                             `Virtual display ${info.display} is running. ` +
                             `The user can view it at: http://localhost:8787${info.noVncUrl}\n\n` +
                             `Next: launch Chromium on this display using bash:\n` +
                             `  DISPLAY=${info.display} nohup chromium --no-sandbox ` +
                             `--disable-dev-shm-usage --disable-gpu ` +
-                            `--remote-debugging-port=9222 "https://example.com" ` +
+                            `--remote-debugging-port=9222 ` +
+                            `--user-data-dir=${profileDir} ` +
+                            `"https://example.com" ` +
                             `> /tmp/chromium.log 2>&1 & disown $!\n\n` +
-                            `Then take screenshots with: DISPLAY=${info.display} scrot /tmp/screenshot.png`,
+                            `The --user-data-dir flag uses a per-session profile directory ` +
+                            `that persists logins, cookies, and browser state across ` +
+                            `container restarts. If a template profile exists at ` +
+                            `data/chromium-template/, new sessions inherit it.\n\n` +
+                            `Take screenshots with: DISPLAY=${info.display} scrot /tmp/screenshot.png`,
                     };
                 } catch (err) {
                     return {

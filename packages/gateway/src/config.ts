@@ -19,6 +19,13 @@ export const config = {
         logs: path.join(ROOT, "logs"),
         workspaces: path.join(ROOT, "workspaces"),
         tokens: path.join(ROOT, "data", "tokens.json"),
+        /** Base directory for per-session Chromium profiles. Each session
+         *  gets its own subdirectory so profiles don't collide. Lives under
+         *  data/ so it's on the bind-mounted volume. */
+        chromiumProfiles: path.join(ROOT, "data", "chromium-profiles"),
+        /** Optional template profile. If it exists, new sessions copy it
+         *  to inherit logins, cookies, extensions, etc. */
+        chromiumTemplate: path.join(ROOT, "data", "chromium-template"),
     },
 } as const;
 

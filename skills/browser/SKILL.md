@@ -28,6 +28,7 @@ Always use `DISPLAY=:N` (the display number from step 1) and these flags:
 ```bash
 DISPLAY=:10 nohup chromium --no-sandbox --disable-dev-shm-usage \
   --disable-gpu --remote-debugging-port=9222 \
+  --user-data-dir=/tower/data/chromium-profiles/SESSION_ID \
   "https://example.com" > /tmp/chromium.log 2>&1 &
 disown $!
 ```
@@ -36,6 +37,10 @@ Key points:
 - Use `nohup` + `disown` so the browser outlives the shell.
 - Always include `--remote-debugging-port=9222` — this enables CDP
   (Chrome DevTools Protocol) which you'll use for screenshots and control.
+- The `--user-data-dir` is provided in the `launch_display` result.
+  It points to a per-session profile that persists logins, cookies, and
+  browser state across container restarts. Use the exact path from the
+  tool result — do NOT omit it.
 - The binary is `chromium` (NOT `chromium-browser` or `google-chrome`).
 - dbus errors in the log are harmless — ignore them.
 
