@@ -1,6 +1,7 @@
 import type { Tool } from "@github/copilot-sdk";
 import { launchDisplay, getDisplay, destroyDisplay } from "./displayManager.js";
 import { setDisplayUrl } from "./sessionAttachments.js";
+import type { StateStore } from "./state.js";
 
 /**
  * Custom tools registered on every Tower session.
@@ -9,7 +10,7 @@ import { setDisplayUrl } from "./sessionAttachments.js";
  * gateway-managed resources like the display manager.
  */
 
-export function buildSessionTools(): Tool[] {
+export function buildSessionTools(store: StateStore): Tool[] {
     return [
         {
             name: "launch_display",
@@ -29,6 +30,7 @@ export function buildSessionTools(): Tool[] {
                 try {
                     const info = await launchDisplay(sessionId);
                     setDisplayUrl(sessionId, info.noVncUrl);
+                    store.setDisplay(sessionId, true);
                     return {
                         status: "ok",
                         display: info.display,
@@ -91,6 +93,7 @@ export function buildSessionTools(): Tool[] {
             handler: async (_args: unknown, invocation) => {
                 await destroyDisplay(invocation.sessionId);
                 setDisplayUrl(invocation.sessionId, undefined);
+                store.setDisplay(invocation.sessionId, false);
                 return {
                     status: "ok",
                     message: "Virtual display destroyed.",

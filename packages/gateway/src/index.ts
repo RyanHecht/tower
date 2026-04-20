@@ -64,7 +64,7 @@ async function main(): Promise<void> {
     const router = await bootRouter(store);
     const crons = new CronScheduler(store, keepAlive);
     crons.hydrate();
-    const { close } = startServer({ router, keepAlive, crons });
+    const { close } = startServer({ router, keepAlive, crons, store });
 
     const shutdown = async (signal: string) => {
         console.log(`[gateway] received ${signal}, shutting down`);

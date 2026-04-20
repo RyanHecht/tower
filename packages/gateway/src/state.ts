@@ -32,9 +32,12 @@ export interface GatewayState {
     keepAlive: Record<string, PersistedKeepAliveEntry>;
     /** Cron jobs keyed by cronId. */
     crons: Record<string, CronJobDef>;
+    /** Sessions that have opted into a virtual display. Persisted so the
+     *  display auto-launches on resume after a gateway restart. */
+    displays: Record<string, boolean>;
 }
 
-const DEFAULT_STATE: GatewayState = { keepAlive: {}, crons: {} };
+const DEFAULT_STATE: GatewayState = { keepAlive: {}, crons: {}, displays: {} };
 const STATE_PATH = join(config.paths.data, "state.json");
 const SAVE_DEBOUNCE_MS = 250;
 
@@ -52,6 +55,7 @@ export class StateStore {
                 router: parsed.router,
                 keepAlive: parsed.keepAlive ?? {},
                 crons: parsed.crons ?? {},
+                displays: parsed.displays ?? {},
             };
         } catch (err) {
             if ((err as NodeJS.ErrnoException).code === "ENOENT") {
@@ -105,6 +109,22 @@ export class StateStore {
         if (job === null) delete this.state.crons[cronId];
         else this.state.crons[cronId] = job;
         this.markDirty();
+    }
+
+    // ── displays ────────────────────────────────────────────────────
+
+    hasDisplay(sessionId: string): boolean {
+        return this.state.displays[sessionId] === true;
+    }
+
+    setDisplay(sessionId: string, active: boolean): void {
+        if (active) this.state.displays[sessionId] = true;
+        else delete this.state.displays[sessionId];
+        this.markDirty();
+    }
+
+    getDisplaySessions(): string[] {
+        return Object.keys(this.state.displays);
     }
 
     // ── persistence ─────────────────────────────────────────────────

@@ -21,15 +21,16 @@ import {
 } from "./sessionAttachments.js";
 import { KeepAliveManager, type KeepAlivePolicy } from "./keepAlive.js";
 import type { CronScheduler } from "./crons.js";
+import type { StateStore } from "./state.js";
 import { launchDisplay, getDisplay, destroyDisplay, listDisplays } from "./displayManager.js";
-import { buildSessionConfig } from "./sessionConfig.js";
+import { buildSessionConfig, ensurePersistedDisplay } from "./sessionConfig.js";
 
 interface InboundBase {
     type: string;
     id?: string | number;
 }
 
-export function handleConnection(ws: WebSocket, remote: string, router: Router | null, keepAlive: KeepAliveManager, crons: CronScheduler): void {
+export function handleConnection(ws: WebSocket, remote: string, router: Router | null, keepAlive: KeepAliveManager, crons: CronScheduler, store: StateStore): void {
     let auth: VerifiedToken | null = null;
     /** sessionId -> our subscription handle (for detaching on close). */
     const subs = new Map<string, Subscription>();
@@ -105,7 +106,7 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                     const cwd = await resolveWorkspace(msg.workspace);
                     const client = await getCopilotClient();
                     let handler: ((req: PermissionRequest) => Promise<PermissionRequestResult>) | null = null;
-                    const cfg = buildSessionConfig("");
+                    const cfg = buildSessionConfig("", store);
                     const session = await client.createSession({
                         ...(msg.model ? { model: msg.model } : {}),
                         workingDirectory: cwd,
@@ -170,9 +171,12 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                         session = existing;
                         policy = buildSessionPolicy(msg.sessionId, mode, allow, deny);
                     } else {
+                        // Re-launch the display before building config so
+                        // builtinMcpServers sees it and includes Playwright.
+                        await ensurePersistedDisplay(msg.sessionId, store);
                         const client = await getCopilotClient();
                         let handler: ((req: PermissionRequest) => Promise<PermissionRequestResult>) | null = null;
-                        const cfg = buildSessionConfig(msg.sessionId);
+                        const cfg = buildSessionConfig(msg.sessionId, store);
                         session = await client.resumeSession(msg.sessionId, {
                             onPermissionRequest: (req) => handler!(req),
                             tools: cfg.tools,
@@ -290,6 +294,7 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                     subs.delete(msg.sessionId);
                     await forceDetach(msg.sessionId);
                     await destroyDisplay(msg.sessionId);
+                    store.setDisplay(msg.sessionId, false);
                     keepAlive.clear(msg.sessionId);
                     const client = await getCopilotClient();
                     await client.deleteSession(msg.sessionId);

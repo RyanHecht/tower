@@ -9,10 +9,13 @@ import type { Router } from "./router.js";
 import type { KeepAliveManager } from "./keepAlive.js";
 import type { CronScheduler } from "./crons.js";
 
+import type { StateStore } from "./state.js";
+
 export interface ServerDeps {
     router: Router | null;
     keepAlive: KeepAliveManager;
     crons: CronScheduler;
+    store: StateStore;
 }
 
 export function startServer(deps: ServerDeps): { wss: WebSocketServer; close: () => void } {
@@ -26,7 +29,7 @@ export function startServer(deps: ServerDeps): { wss: WebSocketServer; close: ()
     wss.on("connection", (ws: WebSocket, req) => {
         const remote = req.socket.remoteAddress ?? "unknown";
         console.log(`[gateway] client connected from ${remote}`);
-        handleConnection(ws, remote, deps.router, deps.keepAlive, deps.crons);
+        handleConnection(ws, remote, deps.router, deps.keepAlive, deps.crons, deps.store);
     });
 
     // Route WebSocket upgrades: VNC proxy vs Tower protocol.

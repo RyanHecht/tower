@@ -1,6 +1,8 @@
 import type { MCPServerConfig, CustomAgentConfig, Tool } from "@github/copilot-sdk";
-import { getDisplay } from "./displayManager.js";
+import { getDisplay, launchDisplay } from "./displayManager.js";
+import { setDisplayUrl } from "./sessionAttachments.js";
 import { buildSessionTools } from "./sessionTools.js";
+import type { StateStore } from "./state.js";
 
 /**
  * Session configuration layer.
@@ -112,7 +114,7 @@ export interface SessionConfigBundle {
  * Call this right before `client.createSession()` / `client.resumeSession()`
  * and spread the result into the SDK config.
  */
-export function buildSessionConfig(sessionId: string): SessionConfigBundle {
+export function buildSessionConfig(sessionId: string, store: StateStore): SessionConfigBundle {
     const mcpServers: Record<string, MCPServerConfig> = {
         ...builtinMcpServers(sessionId),
         ...userConfig.mcpServers,
@@ -132,9 +134,25 @@ export function buildSessionConfig(sessionId: string): SessionConfigBundle {
         ...(userConfig.customAgents ?? []),
     ];
 
-    const tools: Tool[] = buildSessionTools();
+    const tools: Tool[] = buildSessionTools(store);
 
     return { mcpServers, skillDirectories, disabledSkills, customAgents, tools };
+}
+
+/**
+ * If a session previously had a display, re-launch it. Called during
+ * session.resume so the display is ready before the SDK handle starts.
+ */
+export async function ensurePersistedDisplay(sessionId: string, store: StateStore): Promise<void> {
+    if (!store.hasDisplay(sessionId)) return;
+    if (getDisplay(sessionId)) return; // already running
+    try {
+        const info = await launchDisplay(sessionId);
+        setDisplayUrl(sessionId, info.noVncUrl);
+        console.log(`[sessionConfig] auto-launched persisted display for ${sessionId}`);
+    } catch (err) {
+        console.error(`[sessionConfig] failed to auto-launch display for ${sessionId}:`, (err as Error).message);
+    }
 }
 
 /**
