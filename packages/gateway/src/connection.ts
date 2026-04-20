@@ -24,6 +24,7 @@ import type { CronScheduler } from "./crons.js";
 import type { StateStore } from "./state.js";
 import { launchDisplay, getDisplay, destroyDisplay, listDisplays } from "./displayManager.js";
 import { buildSessionConfig, ensurePersistedDisplay } from "./sessionConfig.js";
+import { flushToShared } from "./sessionTools.js";
 
 interface InboundBase {
     type: string;
@@ -293,6 +294,7 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                 try {
                     subs.delete(msg.sessionId);
                     await forceDetach(msg.sessionId);
+                    await flushToShared(msg.sessionId);
                     await destroyDisplay(msg.sessionId);
                     store.setDisplay(msg.sessionId, false);
                     keepAlive.clear(msg.sessionId);

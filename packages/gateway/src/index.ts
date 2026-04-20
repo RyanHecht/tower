@@ -6,8 +6,9 @@ import { Router } from "./router.js";
 import { resolveWorkspace } from "./workspaces.js";
 import { KeepAliveManager } from "./keepAlive.js";
 import { CronScheduler } from "./crons.js";
-import { destroyAllDisplays } from "./displayManager.js";
+import { destroyAllDisplays, listDisplays } from "./displayManager.js";
 import { loadUserSessionConfig } from "./sessionConfig.js";
+import { flushToShared } from "./sessionTools.js";
 import { StateStore } from "./state.js";
 
 async function ensureDirs(): Promise<void> {
@@ -71,6 +72,10 @@ async function main(): Promise<void> {
         close();
         crons.stop();
         keepAlive.stop();
+        // Flush browser auth state before killing displays.
+        for (const d of listDisplays()) {
+            await flushToShared(d.sessionId);
+        }
         await destroyAllDisplays();
         if (router) await router.shutdown();
         await store.flush();

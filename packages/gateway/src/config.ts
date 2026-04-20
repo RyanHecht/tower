@@ -23,9 +23,10 @@ export const config = {
          *  gets its own subdirectory so profiles don't collide. Lives under
          *  data/ so it's on the bind-mounted volume. */
         chromiumProfiles: path.join(ROOT, "data", "chromium-profiles"),
-        /** Optional template profile. If it exists, new sessions copy it
-         *  to inherit logins, cookies, extensions, etc. */
-        chromiumTemplate: path.join(ROOT, "data", "chromium-template"),
+        /** Shared auth pool. Auth files (cookies, logins, localStorage) are
+         *  synced from here on display launch and flushed back on destroy,
+         *  so sign-ins accumulate organically across sessions. */
+        chromiumShared: path.join(ROOT, "data", "chromium-shared"),
     },
 } as const;
 
