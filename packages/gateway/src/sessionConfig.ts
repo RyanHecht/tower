@@ -3,6 +3,7 @@ import { getDisplay, launchDisplay } from "./displayManager.js";
 import { setDisplayUrl } from "./sessionAttachments.js";
 import { buildSessionTools } from "./sessionTools.js";
 import type { StateStore } from "./state.js";
+import type { KeepAliveManager } from "./keepAlive.js";
 
 /**
  * Session configuration layer.
@@ -114,7 +115,7 @@ export interface SessionConfigBundle {
  * Call this right before `client.createSession()` / `client.resumeSession()`
  * and spread the result into the SDK config.
  */
-export function buildSessionConfig(sessionId: string, store: StateStore): SessionConfigBundle {
+export function buildSessionConfig(sessionId: string, store: StateStore, keepAlive: KeepAliveManager): SessionConfigBundle {
     const mcpServers: Record<string, MCPServerConfig> = {
         ...builtinMcpServers(sessionId),
         ...userConfig.mcpServers,
@@ -134,7 +135,7 @@ export function buildSessionConfig(sessionId: string, store: StateStore): Sessio
         ...(userConfig.customAgents ?? []),
     ];
 
-    const tools: Tool[] = buildSessionTools(store);
+    const tools: Tool[] = buildSessionTools(store, keepAlive);
 
     return { mcpServers, skillDirectories, disabledSkills, customAgents, tools };
 }

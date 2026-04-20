@@ -1,0 +1,98 @@
+---
+name: messaging
+description: >
+  Send and receive messages between Tower sessions. Supports direct
+  messages, group messages, channels, threading, and priority levels.
+  Messages are stored as markdown files and persist across restarts.
+---
+
+# Messaging
+
+You can communicate with other Tower sessions using the message board.
+Messages are stored as markdown files in `data/messages/` and persist
+across container restarts.
+
+## Tools
+
+### `tower_send` — Send a message
+
+```
+tower_send(to, message, priority?, tags?)
+```
+
+- `to`: Session ID, array of session IDs, or channel name (prefix with `#`)
+- `message`: Message body (markdown supported)
+- `priority`: `"urgent"` | `"normal"` (default) | `"low"`
+- `tags`: Optional tags for filtering
+
+**Priority behavior:**
+- `urgent` — message is stored AND immediately injected as a prompt
+  into any online recipients. Use sparingly.
+- `normal` — stored in inbox. Recipient sees it when they check.
+- `low` — stored but excluded from unread counts. For FYI/background info.
+
+### `tower_inbox` — Check your inbox
+
+```
+tower_inbox(unreadOnly?, includeLow?, tag?, limit?)
+```
+
+Returns messages addressed to this session, newest first. Defaults to
+unread normal+urgent messages.
+
+### `tower_read` — Read a full message
+
+```
+tower_read(messageId)
+```
+
+Returns the full message content and marks it as read.
+
+### `tower_reply` — Reply to a message
+
+```
+tower_reply(messageId, message, priority?)
+```
+
+Sends a reply to the original sender and all recipients (group reply).
+Creates a threaded conversation.
+
+### `tower_sessions` — Discover sessions
+
+```
+tower_sessions()
+```
+
+Lists all sessions with their ID, summary, workspace, and active status.
+Use this to find who to message.
+
+## Patterns
+
+**Delegate a task:**
+```
+1. tower_sessions() — find the right session
+2. tower_send(to: "session-id", message: "please research X", tags: ["research"])
+3. Later: tower_inbox() to check for replies
+```
+
+**Check on progress:**
+```
+1. tower_send(to: "session-id", message: "status update please?", priority: "normal")
+2. tower_inbox(tag: "status") to read the response
+```
+
+**Broadcast to a channel:**
+```
+tower_send(to: "#all", message: "build is broken, check CI", priority: "urgent")
+```
+
+**Start your turn by checking messages:**
+```
+tower_inbox() — see if anyone sent you something
+```
+
+## Message files
+
+Messages are plain markdown files at `data/messages/msg_*.md` with YAML
+frontmatter. You can also read them directly with `view` or `grep` if
+the tools aren't available.

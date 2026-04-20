@@ -9,6 +9,7 @@ import { CronScheduler } from "./crons.js";
 import { destroyAllDisplays, listDisplays } from "./displayManager.js";
 import { loadUserSessionConfig } from "./sessionConfig.js";
 import { flushToShared } from "./sessionTools.js";
+import { ensureMessageDirs } from "./messageStore.js";
 import { StateStore } from "./state.js";
 
 async function ensureDirs(): Promise<void> {
@@ -57,6 +58,7 @@ async function main(): Promise<void> {
     const store = new StateStore();
     await store.load();
     await loadUserSessionConfig();
+    await ensureMessageDirs();
 
     const client = await getCopilotClient();
     const keepAlive = new KeepAliveManager(client, store);

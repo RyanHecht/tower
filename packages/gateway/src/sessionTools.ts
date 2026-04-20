@@ -6,6 +6,11 @@ import { launchDisplay, getDisplay, destroyDisplay } from "./displayManager.js";
 import { setDisplayUrl } from "./sessionAttachments.js";
 import { config } from "./config.js";
 import type { StateStore } from "./state.js";
+import * as messages from "./messageStore.js";
+import { headlessSend } from "./headlessSend.js";
+import type { KeepAliveManager } from "./keepAlive.js";
+import { getCopilotClient } from "./copilot.js";
+import { attachedSessions } from "./attached.js";
 
 /**
  * Custom tools registered on every Tower session.
@@ -78,8 +83,9 @@ export async function flushToShared(sessionId: string): Promise<void> {
     if (n > 0) console.log(`[display] synced ${n} auth files from ${sessionId} → shared pool`);
 }
 
-export function buildSessionTools(store: StateStore): Tool[] {
+export function buildSessionTools(store: StateStore, keepAlive: KeepAliveManager): Tool[] {
     return [
+        // ── Display tools ──────────────────────────────────────────────
         {
             name: "launch_display",
             description:
@@ -177,6 +183,184 @@ export function buildSessionTools(store: StateStore): Tool[] {
                     status: "ok",
                     message: "Virtual display destroyed. Browser logins synced to shared pool.",
                 };
+            },
+        },
+
+        // ── Messaging tools ────────────────────────────────────────────
+
+        {
+            name: "tower_send",
+            description:
+                "Send a message to one or more sessions, or to a channel (prefix with #). " +
+                "Messages are stored as markdown files in data/messages/ and are readable " +
+                "by any session. Priority controls delivery: 'urgent' messages are also " +
+                "injected as an immediate prompt to online recipients. 'normal' messages " +
+                "wait in the inbox. 'low' messages are FYI — excluded from unread counts.",
+            parameters: {
+                type: "object",
+                properties: {
+                    to: {
+                        description: "Session ID(s) or channel name(s) prefixed with #. Can be a single string or an array.",
+                        oneOf: [{ type: "string" }, { type: "array", items: { type: "string" } }],
+                    },
+                    message: { type: "string", description: "The message body (markdown supported)." },
+                    priority: {
+                        type: "string",
+                        enum: ["urgent", "normal", "low"],
+                        description: "Delivery priority. Default: normal.",
+                    },
+                    tags: {
+                        type: "array",
+                        items: { type: "string" },
+                        description: "Optional tags for filtering (e.g., 'research', 'bug').",
+                    },
+                },
+                required: ["to", "message"],
+            },
+            handler: async (args: unknown, invocation) => {
+                const a = args as { to: string | string[]; message: string; priority?: string; tags?: string[] };
+                try {
+                    const msg = await messages.send({
+                        from: invocation.sessionId,
+                        to: a.to,
+                        body: a.message,
+                        priority: (a.priority as messages.Priority) ?? "normal",
+                        tags: a.tags,
+                    });
+
+                    // Urgent: inject as immediate prompt to online recipients.
+                    if (msg.priority === "urgent") {
+                        for (const recipientId of msg.to) {
+                            if (attachedSessions.has(recipientId)) {
+                                headlessSend(recipientId, `[URGENT MESSAGE from ${msg.from}]\n\n${msg.body}`, keepAlive)
+                                    .catch((err) => console.error(`[messages] urgent inject failed for ${recipientId}:`, (err as Error).message));
+                            }
+                        }
+                    }
+
+                    return {
+                        status: "ok",
+                        messageId: msg.id,
+                        deliveredTo: msg.to,
+                        priority: msg.priority,
+                    };
+                } catch (err) {
+                    return { status: "error", message: (err as Error).message };
+                }
+            },
+        },
+        {
+            name: "tower_inbox",
+            description:
+                "Check this session's message inbox. Returns a list of messages addressed " +
+                "to this session, newest first. By default shows unread normal+urgent messages. " +
+                "Pass unreadOnly=false to see all, includeLow=true to include FYI messages.",
+            parameters: {
+                type: "object",
+                properties: {
+                    unreadOnly: { type: "boolean", description: "Only unread messages (default: true)." },
+                    includeLow: { type: "boolean", description: "Include low-priority FYI messages (default: false)." },
+                    tag: { type: "string", description: "Filter by tag." },
+                    limit: { type: "number", description: "Max results (default: 50)." },
+                },
+            },
+            handler: async (args: unknown, invocation) => {
+                const a = (args ?? {}) as { unreadOnly?: boolean; includeLow?: boolean; tag?: string; limit?: number };
+                const results = await messages.inbox({
+                    sessionId: invocation.sessionId,
+                    unreadOnly: a.unreadOnly ?? true,
+                    includeLow: a.includeLow ?? false,
+                    tag: a.tag,
+                    limit: a.limit,
+                });
+                return { count: results.length, messages: results };
+            },
+        },
+        {
+            name: "tower_read",
+            description:
+                "Read the full content of a message by ID. Also marks it as read for this session.",
+            parameters: {
+                type: "object",
+                properties: {
+                    messageId: { type: "string", description: "The message ID (e.g., msg_abc123def456)." },
+                },
+                required: ["messageId"],
+            },
+            handler: async (args: unknown, invocation) => {
+                const a = args as { messageId: string };
+                const msg = await messages.read(a.messageId, invocation.sessionId);
+                if (!msg) return { status: "error", message: `Message not found: ${a.messageId}` };
+                return { status: "ok", message: msg };
+            },
+        },
+        {
+            name: "tower_reply",
+            description:
+                "Reply to a message. The reply is addressed to the original sender and " +
+                "all recipients of the original message (group reply). Creates a threaded " +
+                "conversation.",
+            parameters: {
+                type: "object",
+                properties: {
+                    messageId: { type: "string", description: "ID of the message to reply to." },
+                    message: { type: "string", description: "Reply body (markdown supported)." },
+                    priority: {
+                        type: "string",
+                        enum: ["urgent", "normal", "low"],
+                        description: "Override priority (default: inherit from original).",
+                    },
+                },
+                required: ["messageId", "message"],
+            },
+            handler: async (args: unknown, invocation) => {
+                const a = args as { messageId: string; message: string; priority?: string };
+                const msg = await messages.reply({
+                    messageId: a.messageId,
+                    from: invocation.sessionId,
+                    body: a.message,
+                    priority: a.priority as messages.Priority | undefined,
+                });
+                if (!msg) return { status: "error", message: `Original message not found: ${a.messageId}` };
+
+                // Urgent replies also get injected.
+                if (msg.priority === "urgent") {
+                    for (const recipientId of msg.to) {
+                        if (attachedSessions.has(recipientId)) {
+                            headlessSend(recipientId, `[URGENT REPLY from ${msg.from}]\n\n${msg.body}`, keepAlive)
+                                .catch((err) => console.error(`[messages] urgent inject failed for ${recipientId}:`, (err as Error).message));
+                        }
+                    }
+                }
+
+                return { status: "ok", messageId: msg.id, deliveredTo: msg.to };
+            },
+        },
+        {
+            name: "tower_sessions",
+            description:
+                "List all sessions on this Tower instance with their status. " +
+                "Use this to discover session IDs for messaging.",
+            parameters: {
+                type: "object",
+                properties: {},
+            },
+            handler: async () => {
+                try {
+                    const client = await getCopilotClient();
+                    const list = await client.listSessions();
+                    return {
+                        sessions: list.map((s) => ({
+                            sessionId: s.sessionId,
+                            summary: s.summary,
+                            workspace: s.context?.cwd,
+                            isActive: attachedSessions.has(s.sessionId),
+                            lastActivity: s.modifiedTime?.toISOString?.() ?? undefined,
+                        })),
+                    };
+                } catch (err) {
+                    return { status: "error", message: (err as Error).message };
+                }
             },
         },
     ];

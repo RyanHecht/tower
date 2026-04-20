@@ -107,7 +107,7 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                     const cwd = await resolveWorkspace(msg.workspace);
                     const client = await getCopilotClient();
                     let handler: ((req: PermissionRequest) => Promise<PermissionRequestResult>) | null = null;
-                    const cfg = buildSessionConfig("", store);
+                    const cfg = buildSessionConfig("", store, keepAlive);
                     const session = await client.createSession({
                         ...(msg.model ? { model: msg.model } : {}),
                         workingDirectory: cwd,
@@ -177,7 +177,7 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                         await ensurePersistedDisplay(msg.sessionId, store);
                         const client = await getCopilotClient();
                         let handler: ((req: PermissionRequest) => Promise<PermissionRequestResult>) | null = null;
-                        const cfg = buildSessionConfig(msg.sessionId, store);
+                        const cfg = buildSessionConfig(msg.sessionId, store, keepAlive);
                         session = await client.resumeSession(msg.sessionId, {
                             onPermissionRequest: (req) => handler!(req),
                             tools: cfg.tools,
