@@ -6,6 +6,7 @@ import { Router } from "./router.js";
 import { resolveWorkspace } from "./workspaces.js";
 import { KeepAliveManager } from "./keepAlive.js";
 import { CronScheduler } from "./crons.js";
+import { destroyAllDisplays } from "./displayManager.js";
 import { StateStore } from "./state.js";
 
 async function ensureDirs(): Promise<void> {
@@ -68,6 +69,7 @@ async function main(): Promise<void> {
         close();
         crons.stop();
         keepAlive.stop();
+        await destroyAllDisplays();
         if (router) await router.shutdown();
         await store.flush();
         await shutdownCopilotClient();

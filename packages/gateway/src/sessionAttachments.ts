@@ -34,6 +34,8 @@ export interface SessionStatusSnapshot {
     busy: boolean;
     lastIntent?: string;
     queuedSends: number;
+    /** noVNC URL if a display is active for this session. */
+    displayUrl?: string;
 }
 
 export interface Subscription {
@@ -184,6 +186,14 @@ export function noteSend(sessionId: string): void {
     fanout(entry, buildStatusFrame(entry));
 }
 
+/** Update the display URL for a session and broadcast the change. */
+export function setDisplayUrl(sessionId: string, url: string | undefined): void {
+    const entry = entries.get(sessionId);
+    if (!entry) return;
+    entry.status.displayUrl = url;
+    fanout(entry, buildStatusFrame(entry));
+}
+
 function buildStatusFrame(entry: AttachmentEntry) {
     return {
         type: "session.status" as const,
@@ -191,6 +201,7 @@ function buildStatusFrame(entry: AttachmentEntry) {
         busy: entry.status.busy,
         queuedSends: entry.status.queuedSends,
         ...(entry.status.lastIntent ? { lastIntent: entry.status.lastIntent } : {}),
+        ...(entry.status.displayUrl ? { display: { noVncUrl: entry.status.displayUrl } } : {}),
     };
 }
 

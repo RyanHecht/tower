@@ -47,8 +47,8 @@ RUN curl -fsSL "https://github.com/novnc/noVNC/archive/refs/tags/v${NOVNC_VERSIO
     && mv "/opt/noVNC-${NOVNC_VERSION}" /opt/noVNC \
     && ln -s /opt/noVNC/vnc.html /opt/noVNC/index.html
 
-# Install Copilot CLI globally. Pinned for reproducibility.
-RUN npm install -g "@github/copilot@${COPILOT_VERSION}"
+# Install Copilot CLI and Playwright MCP server globally.
+RUN npm install -g "@github/copilot@${COPILOT_VERSION}" @playwright/mcp
 
 # Non-root user that owns /tower and $COPILOT_HOME.
 # UID/GID are build args so the bind-mounted ./data, ./logs, ./workspaces
@@ -106,11 +106,10 @@ ENV PROJECT_ROOT=/tower \
     DAEMON_PORT=4321 \
     COPILOT_HOME=/home/tower/.copilot \
     NODE_ENV=production \
-    DISPLAY=:99 \
     CHROME_PATH=/usr/bin/chromium \
     CHROMIUM_FLAGS="--no-sandbox --disable-dev-shm-usage"
 
-# 8787 = gateway (HTTP + WS), 6080 = noVNC (browser-based desktop viewer)
+# 8787 = gateway (HTTP + WS), 6080 = noVNC proxy (per-session displays)
 EXPOSE 8787 6080
 
 ENTRYPOINT ["/usr/local/bin/tower-entrypoint"]

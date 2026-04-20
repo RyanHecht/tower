@@ -16,10 +16,12 @@ import {
     getSession,
     noteSend,
     register,
+    setDisplayUrl,
     type Subscription,
 } from "./sessionAttachments.js";
 import { KeepAliveManager, type KeepAlivePolicy } from "./keepAlive.js";
 import type { CronScheduler } from "./crons.js";
+import { launchDisplay, getDisplay, destroyDisplay, listDisplays } from "./displayManager.js";
 
 interface InboundBase {
     type: string;
@@ -280,11 +282,9 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
 
             case "session.delete": {
                 try {
-                    // Drop our subscriber + force-tear-down the registry
-                    // entry (cancels any pending prompts), then delete on the
-                    // daemon and clear keep-alive state.
                     subs.delete(msg.sessionId);
                     await forceDetach(msg.sessionId);
+                    await destroyDisplay(msg.sessionId);
                     keepAlive.clear(msg.sessionId);
                     const client = await getCopilotClient();
                     await client.deleteSession(msg.sessionId);
@@ -359,6 +359,38 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                 const deleted = crons.delete(msg.cronId);
                 if (!deleted) return respond(msg.id, false, `cron not found: ${msg.cronId}`);
                 respond(msg.id, true, { deleted: true });
+                return;
+            }
+
+            // ── Display management ─────────────────────────────────────
+
+            case "display.launch": {
+                try {
+                    const info = await launchDisplay(msg.sessionId);
+                    setDisplayUrl(msg.sessionId, info.noVncUrl);
+                    respond(msg.id, true, { display: info });
+                } catch (err) {
+                    respond(msg.id, false, (err as Error).message);
+                }
+                return;
+            }
+
+            case "display.get": {
+                const info = getDisplay(msg.sessionId);
+                if (!info) return respond(msg.id, false, "no display for this session");
+                respond(msg.id, true, { display: info });
+                return;
+            }
+
+            case "display.destroy": {
+                await destroyDisplay(msg.sessionId);
+                setDisplayUrl(msg.sessionId, undefined);
+                respond(msg.id, true, { destroyed: true });
+                return;
+            }
+
+            case "display.list": {
+                respond(msg.id, true, { displays: listDisplays() });
                 return;
             }
 

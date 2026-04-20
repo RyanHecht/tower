@@ -5,6 +5,7 @@ import type { EventMessage, PermissionRequestMessage, PermissionResolvedMessage,
 import type { TowerClient } from "../client.js";
 import { getMarkdownStyle } from "../markdownStyle.js";
 import { useDoubleCtrlCQuit } from "../useDoubleCtrlCQuit.js";
+import { trySlashCommand, COMMAND_LIST, type CommandInfo } from "../commands.js";
 import { PermissionPrompt } from "./PermissionPrompt.js";
 import {
     applyEvent,
@@ -197,7 +198,28 @@ export function Session({ client, sessionId, initialPrompt }: Props) {
     const [error, setError] = useState<string | null>(null);
     const [pending, setPending] = useState<PendingPermission | null>(null);
     const [queuedSends, setQueuedSends] = useState(0);
+    const [displayUrl, setDisplayUrl] = useState<string | null>(null);
     const [now, setNow] = useState(Date.now());
+
+    // ── Slash-command autocomplete state ──────────────────────────────
+    const [inputText, setInputText] = useState("");
+    const [selectedIdx, setSelectedIdx] = useState(0);
+
+    /** Prefix-matched command suggestions, only when the user is typing `/cmd`. */
+    const suggestions = useMemo((): CommandInfo[] => {
+        // Match bare `/` or `/prefix` with no space (user is still typing the command name)
+        const m = /^\/([a-z]*)$/i.exec(inputText);
+        if (!m) return [];
+        const prefix = m[1]!.toLowerCase();
+        return COMMAND_LIST.filter((c) => c.name.startsWith(prefix));
+    }, [inputText]);
+
+    // Reset selection when the filtered list changes.
+    const prevSugLen = useRef(suggestions.length);
+    if (suggestions.length !== prevSugLen.current) {
+        prevSugLen.current = suggestions.length;
+        setSelectedIdx(0);
+    }
 
     const idRef = useRef(0);
     const mapsRef = useRef(newMaps());
@@ -359,10 +381,7 @@ export function Session({ client, sessionId, initialPrompt }: Props) {
             if (msg.sessionId !== sessionId) return;
             serverStatusRef.current = { busy: msg.busy, lastIntent: msg.lastIntent };
             setQueuedSends(msg.queuedSends);
-            // Keep `lastIntent` mirrored into the status reducer so the
-            // status bar's `detail` field has something to render even when
-            // we attached mid-turn and missed the original `assistant.intent`
-            // event.
+            setDisplayUrl(msg.display?.noVncUrl ?? null);
             if (msg.lastIntent) {
                 setStatus((prev) =>
                     prev.lastIntent === msg.lastIntent ? prev : { ...prev, lastIntent: msg.lastIntent },
@@ -387,6 +406,10 @@ export function Session({ client, sessionId, initialPrompt }: Props) {
     const sendPrompt = (raw: string) => {
         const trimmed = raw.trim();
         if (!trimmed) return;
+        // Intercept known slash commands (e.g. /model, /compact) and dispatch
+        // them to the typed gateway API. Unknown /foo passes through normally
+        // so inputs like /home/path/file.ts still reach the agent.
+        if (trySlashCommand(trimmed, { client, sessionId, api: apiRef.current! })) return;
         // The daemon will emit a user.message event back to us; the timeline
         // reducer renders it. Pushing locally would duplicate the entry.
         client.notify({ type: "session.send", sessionId, prompt: trimmed });
@@ -422,12 +445,14 @@ export function Session({ client, sessionId, initialPrompt }: Props) {
             sendPrompt(text);
             ta.setText("");
             setInputRows(1);
+            setInputText("");
         };
         // Track content height so the prompt frame grows in lock-step with
         // the buffer (Yoga's measure-func cache otherwise lags by one line,
         // making the box appear to grow only every other newline).
         ta.onContentChange = () => {
             setInputRows(Math.min(MAX_INPUT_ROWS, Math.max(1, ta.lineCount)));
+            setInputText(ta.plainText);
         };
         // Keep keyboard focus pinned to the prompt no matter where the user
         // clicks — except while a permission dialog is up, since that owns
@@ -460,6 +485,45 @@ export function Session({ client, sessionId, initialPrompt }: Props) {
 
     useKeyboard((key) => {
         if (pending) return;
+
+        // ── Slash-command autocomplete navigation ────────────────────
+        if (suggestions.length > 0) {
+            if (key.name === "tab") {
+                key.preventDefault();
+                const cmd = suggestions[Math.min(selectedIdx, suggestions.length - 1)]!;
+                const completed = `/${cmd.name} `;
+                const ta = textareaRef.current;
+                if (ta) {
+                    ta.setText(completed);
+                    ta.cursorOffset = completed.length;
+                }
+                setInputText(completed);
+                setSelectedIdx(0);
+                return;
+            }
+            if (key.name === "up") {
+                key.preventDefault();
+                setSelectedIdx((i) => Math.max(0, i - 1));
+                return;
+            }
+            if (key.name === "down") {
+                key.preventDefault();
+                setSelectedIdx((i) => Math.min(suggestions.length - 1, i + 1));
+                return;
+            }
+            if (key.name === "escape") {
+                // Dismiss the menu by clearing the input.
+                const ta = textareaRef.current;
+                if (ta) {
+                    ta.setText("");
+                    ta.cursorOffset = 0;
+                }
+                setInputText("");
+                setSelectedIdx(0);
+                return;
+            }
+        }
+
         if (key.name === "escape") {
             // Abort an in-flight turn. No-op if idle.
             if (status.phase.kind !== "idle") {
@@ -598,6 +662,41 @@ export function Session({ client, sessionId, initialPrompt }: Props) {
                 />
             ) : null}
 
+            {/* Slash-command autocomplete — positioned absolutely so it
+                floats above the timeline rather than eating flex space. */}
+            {suggestions.length > 0 ? (
+                <box
+                    style={{
+                        position: "absolute",
+                        bottom: inputRows + 2 + (quitHint ? 1 : 0) + (displayUrl ? 1 : 0),
+                        left: 0,
+                        width: "100%",
+                        zIndex: 10,
+                        border: true,
+                        borderColor: "#555",
+                        paddingLeft: 1,
+                        paddingRight: 1,
+                        flexDirection: "column",
+                        backgroundColor: "#1e1e1e",
+                    }}
+                >
+                    {suggestions.map((cmd, i) => {
+                        const sel = i === Math.min(selectedIdx, suggestions.length - 1);
+                        return (
+                            <text key={cmd.name}>
+                                <span fg={sel ? "#7dd3fc" : "gray"} attributes={sel ? 1 : 0}>
+                                    /{cmd.name}
+                                </span>
+                                <span fg="gray"> — {cmd.description}</span>
+                            </text>
+                        );
+                    })}
+                    <text>
+                        <span fg="#555">tab to complete · ↑↓ to navigate</span>
+                    </text>
+                </box>
+            ) : null}
+
             {/* Prompt — only top + bottom borders, height tracks content. */}
             <box
                 style={{
@@ -626,6 +725,15 @@ export function Session({ client, sessionId, initialPrompt }: Props) {
                 <box style={{ paddingLeft: 1, paddingRight: 1 }}>
                     <text>
                         <span fg="#fbbf24">{quitHint}</span>
+                    </text>
+                </box>
+            ) : null}
+            {displayUrl ? (
+                <box style={{ paddingLeft: 1, paddingRight: 1 }}>
+                    <text>
+                        <span fg="cyan">🖥</span>{" "}
+                        <span fg="gray">Desktop:</span>{" "}
+                        <span fg="cyan" attributes={4}>{`http://localhost:6080${displayUrl}`}</span>
                     </text>
                 </box>
             ) : null}

@@ -87,6 +87,11 @@ export type Inbound =
     | { type: "cron.get"; id: string | number; cronId: string }
     | { type: "cron.update"; id: string | number; cronId: string; schedule?: string; prompt?: string; enabled?: boolean; sessionId?: string }
     | { type: "cron.delete"; id: string | number; cronId: string }
+    // ── Display management ──────────────────────────────────────────
+    | { type: "display.launch"; id: string | number; sessionId: string }
+    | { type: "display.get"; id: string | number; sessionId: string }
+    | { type: "display.destroy"; id: string | number; sessionId: string }
+    | { type: "display.list"; id: string | number }
     // ── Tier 1: direct SDK pass-through ─────────────────────────────
     // Server-scoped
     | { type: "models.list"; id: string | number }
@@ -168,6 +173,8 @@ export interface SessionStatusMessage {
     lastIntent?: string;
     /** `session.send` frames received while busy. Reset to 0 on `session.idle`. */
     queuedSends: number;
+    /** Present when the session has a virtual display running. */
+    display?: { noVncUrl: string };
 }
 
 export type Outbound =
