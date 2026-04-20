@@ -533,6 +533,32 @@ export function Session({ client, sessionId, initialPrompt }: Props) {
             }
             return;
         }
+        if (key.ctrl && key.name === "v") {
+            // Paste from system clipboard. Bracketed paste (terminal-native
+            // Ctrl+V) is handled automatically by OpenTUI, but some terminals
+            // send raw \x16 instead — this catches that case.
+            try {
+                const { execSync } = require("child_process") as typeof import("child_process");
+                let clip = "";
+                try {
+                    // Linux (X11/Wayland)
+                    clip = execSync("xclip -selection clipboard -o 2>/dev/null || xsel --clipboard --output 2>/dev/null || wl-paste 2>/dev/null", { encoding: "utf8", timeout: 1000 });
+                } catch {
+                    try {
+                        // macOS
+                        clip = execSync("pbpaste", { encoding: "utf8", timeout: 1000 });
+                    } catch { /* no clipboard tool available */ }
+                }
+                if (clip) {
+                    const ta = textareaRef.current;
+                    if (ta) {
+                        ta.insertText(clip);
+                        setInputText(ta.plainText);
+                    }
+                }
+            } catch { /* ignore clipboard errors */ }
+            return;
+        }
         if (key.ctrl && key.name === "c") {
             // 1. If the user has selected text (textarea or document), copy
             //    it via OSC52 — that's the most common reason to hit Ctrl+C
