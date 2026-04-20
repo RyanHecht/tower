@@ -105,14 +105,12 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                     const cwd = await resolveWorkspace(msg.workspace);
                     const client = await getCopilotClient();
                     let handler: ((req: PermissionRequest) => Promise<PermissionRequestResult>) | null = null;
-                    // Session config at create time — no display exists yet,
-                    // so buildSessionConfig returns only user/built-in servers.
-                    // Playwright gets added dynamically via display.launch.
                     const cfg = buildSessionConfig("");
                     const session = await client.createSession({
                         ...(msg.model ? { model: msg.model } : {}),
                         workingDirectory: cwd,
                         onPermissionRequest: (req) => handler!(req),
+                        tools: cfg.tools,
                         ...(Object.keys(cfg.mcpServers).length > 0 ? { mcpServers: cfg.mcpServers } : {}),
                         ...(cfg.skillDirectories.length > 0 ? { skillDirectories: cfg.skillDirectories } : {}),
                         ...(cfg.disabledSkills.length > 0 ? { disabledSkills: cfg.disabledSkills } : {}),
@@ -177,6 +175,7 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                         const cfg = buildSessionConfig(msg.sessionId);
                         session = await client.resumeSession(msg.sessionId, {
                             onPermissionRequest: (req) => handler!(req),
+                            tools: cfg.tools,
                             ...(Object.keys(cfg.mcpServers).length > 0 ? { mcpServers: cfg.mcpServers } : {}),
                             ...(cfg.skillDirectories.length > 0 ? { skillDirectories: cfg.skillDirectories } : {}),
                             ...(cfg.disabledSkills.length > 0 ? { disabledSkills: cfg.disabledSkills } : {}),

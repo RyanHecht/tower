@@ -88,6 +88,7 @@ RUN set -eux; \
 # --- source + build -----------------------------------------------------
 COPY tsconfig.base.json tsconfig.json ./
 COPY packages ./packages
+COPY skills ./skills
 COPY docker/entrypoint.sh /usr/local/bin/tower-entrypoint
 RUN chmod +x /usr/local/bin/tower-entrypoint
 

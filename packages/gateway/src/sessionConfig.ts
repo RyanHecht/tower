@@ -1,5 +1,6 @@
-import type { MCPServerConfig, CustomAgentConfig } from "@github/copilot-sdk";
+import type { MCPServerConfig, CustomAgentConfig, Tool } from "@github/copilot-sdk";
 import { getDisplay } from "./displayManager.js";
+import { buildSessionTools } from "./sessionTools.js";
 
 /**
  * Session configuration layer.
@@ -101,6 +102,8 @@ export interface SessionConfigBundle {
     skillDirectories: string[];
     disabledSkills: string[];
     customAgents: CustomAgentConfig[];
+    /** Custom tools that run inside the gateway process. */
+    tools: Tool[];
 }
 
 /**
@@ -116,6 +119,8 @@ export function buildSessionConfig(sessionId: string): SessionConfigBundle {
     };
 
     const skillDirectories: string[] = [
+        // Built-in Tower skills (browser, etc.)
+        `${config.root}/skills`,
         ...(userConfig.skillDirectories ?? []),
     ];
 
@@ -127,7 +132,9 @@ export function buildSessionConfig(sessionId: string): SessionConfigBundle {
         ...(userConfig.customAgents ?? []),
     ];
 
-    return { mcpServers, skillDirectories, disabledSkills, customAgents };
+    const tools: Tool[] = buildSessionTools();
+
+    return { mcpServers, skillDirectories, disabledSkills, customAgents, tools };
 }
 
 /**
