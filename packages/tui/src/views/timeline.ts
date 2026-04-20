@@ -150,7 +150,15 @@ export const applyEvent = (api: TimelineApi, event: SessionEvent): void => {
     switch (ev.type) {
         case "user.message": {
             const content = String(data["content"] ?? "");
-            if (content) api.push({ kind: "user", text: content });
+            if (!content) return;
+            // Skill context injections are verbose system messages — collapse
+            // them to a single quiet line instead of dumping the full SKILL.md.
+            const skillMatch = content.match(/^<skill-context\s+name="([^"]+)">/);
+            if (skillMatch) {
+                api.push({ kind: "info", text: `skill loaded: ${skillMatch[1]}` });
+                return;
+            }
+            api.push({ kind: "user", text: content });
             return;
         }
 
