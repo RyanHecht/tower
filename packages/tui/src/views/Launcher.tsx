@@ -222,6 +222,25 @@ export function Launcher({ client, routerSessionId, lastSessionId, onOpen }: Pro
             pressedCtrlC();
             return;
         }
+        // Paste from system clipboard.
+        if (key.ctrl && key.name === "v") {
+            key.preventDefault();
+            try {
+                const { execSync } = require("child_process") as typeof import("child_process");
+                let clip = "";
+                try {
+                    clip = execSync("xclip -selection clipboard -o 2>/dev/null || xsel --clipboard --output 2>/dev/null || wl-paste 2>/dev/null", { encoding: "utf8", timeout: 2000 });
+                } catch {
+                    try {
+                        clip = execSync("pbpaste", { encoding: "utf8", timeout: 2000 });
+                    } catch { /* no clipboard tool available */ }
+                }
+                if (clip && focus === "input") {
+                    setInput((prev) => prev + clip.replace(/[\n\r]/g, " "));
+                }
+            } catch { /* ignore clipboard errors */ }
+            return;
+        }
         // Tab toggles focus regardless of which side we're on. The Input
         // component does not insert a literal tab into its value, so this is
         // safe even with a non-empty input buffer.
