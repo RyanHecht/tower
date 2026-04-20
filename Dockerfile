@@ -38,6 +38,7 @@ RUN apt-get update \
         bash ca-certificates curl netcat-openbsd \
         xvfb x11vnc fluxbox xdotool \
         chromium chromium-sandbox fonts-liberation fonts-noto-color-emoji \
+        scrot \
         python3 python3-websockify \
     && rm -rf /var/lib/apt/lists/*
 

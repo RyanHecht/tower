@@ -2,8 +2,8 @@
 name: browser
 description: >
   Browse the web using a real headed Chromium browser on a virtual desktop.
-  Supports navigation, clicking, typing, screenshots, and full page interaction
-  via Playwright. The user can watch the browser in real-time via noVNC.
+  Supports navigation, clicking, typing, screenshots, and full page interaction.
+  The user can watch the browser in real-time via noVNC.
 ---
 
 # Browser Skill
@@ -12,51 +12,131 @@ You have access to a virtual desktop with a headed Chromium browser for web
 browsing, automation, and interaction. This is a REAL browser (not headless),
 which means it works with sites that detect and block headless browsers.
 
-## Setup — REQUIRED before browsing
+## Quick Start
 
-Before you can use any Playwright browser tools, you MUST call the
-`launch_display` tool. This starts the virtual desktop (Xvfb + window
-manager + VNC server) that the browser needs to render on.
+### Step 1: Launch the virtual display
 
+Call the `launch_display` tool (no arguments). This starts the virtual
+desktop that the browser renders on. It returns a noVNC URL the user can
+open to watch.
+
+### Step 2: Launch Chromium
+
+Use bash to launch Chromium on the display. The binary is `/usr/bin/chromium`.
+Always use `DISPLAY=:N` (the display number from step 1) and these flags:
+
+```bash
+DISPLAY=:10 nohup chromium --no-sandbox --disable-dev-shm-usage \
+  --disable-gpu --remote-debugging-port=9222 \
+  "https://example.com" > /tmp/chromium.log 2>&1 &
+disown $!
 ```
-1. Call `launch_display` (no arguments needed)
-2. Wait for it to return — it gives you the display ID and noVNC URL
-3. On your NEXT turn, Playwright browser tools become available
+
+Key points:
+- Use `nohup` + `disown` so the browser outlives the shell.
+- Always include `--remote-debugging-port=9222` — this enables CDP
+  (Chrome DevTools Protocol) which you'll use for screenshots and control.
+- The binary is `chromium` (NOT `chromium-browser` or `google-chrome`).
+- dbus errors in the log are harmless — ignore them.
+
+### Step 3: Interact with the page
+
+Use the CDP remote debugging port to control the browser:
+
+**List open tabs:**
+```bash
+curl -s http://localhost:9222/json/list
 ```
 
-The `launch_display` tool is idempotent — calling it when a display is already
-running just returns the existing display info.
+**Take a screenshot** (via bash — the simplest approach):
+```bash
+DISPLAY=:10 scrot /tmp/screenshot.png
+```
+Then use the `view` tool to look at `/tmp/screenshot.png`.
 
-## Available tools after launch
+**Take a screenshot via CDP** (when scrot doesn't capture what you need):
+```python
+python3 -c "
+import urllib.request, json, base64, socket, hashlib, struct, os
 
-Once the display is running and you send your next message, these Playwright
-tools become available (among others):
+data = json.loads(urllib.request.urlopen('http://localhost:9222/json/list').read())
+ws_url = data[0]['webSocketDebuggerUrl']
 
-- `browser_navigate` — go to a URL
-- `browser_click` — click an element (by text, accessibility label, or coordinates)
-- `browser_type` — type text into a focused element
-- `browser_snapshot` — get the accessibility tree of the current page
-- `browser_screenshot` — take a screenshot (with `--caps=vision` enabled)
-- `browser_tab_list` — list open tabs
-- `browser_tab_create` — open a new tab
-- `browser_go_back` / `browser_go_forward` — navigation history
-- `browser_wait` — wait for a condition
-- `browser_evaluate` — run JavaScript in the page
+# Parse WebSocket URL
+parts = ws_url.replace('ws://', '').split('/', 1)
+host_port = parts[0].split(':')
+host, port = host_port[0], int(host_port[1])
+path = '/' + parts[1] if len(parts) > 1 else '/'
+
+# WebSocket handshake
+key = base64.b64encode(os.urandom(16)).decode()
+sock = socket.create_connection((host, port))
+sock.sendall(f'GET {path} HTTP/1.1\r\nHost: {host}:{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n'.encode())
+
+# Read handshake response
+resp = b''
+while b'\r\n\r\n' not in resp:
+    resp += sock.recv(4096)
+
+# Send Page.captureScreenshot
+msg = json.dumps({'id': 1, 'method': 'Page.captureScreenshot', 'params': {'format': 'png'}}).encode()
+frame = bytearray([0x81])
+mask_key = os.urandom(4)
+length = len(msg)
+if length < 126:
+    frame.append(0x80 | length)
+else:
+    frame.append(0x80 | 126)
+    frame.extend(struct.pack('>H', length))
+frame.extend(mask_key)
+frame.extend(bytes(b ^ mask_key[i % 4] for i, b in enumerate(msg)))
+sock.sendall(frame)
+
+# Read response
+data_buf = b''
+while True:
+    data_buf += sock.recv(65536)
+    try:
+        # Find JSON in response (skip WebSocket framing)
+        start = data_buf.index(b'{\"id\":1')
+        result = json.loads(data_buf[start:])
+        break
+    except (ValueError, json.JSONDecodeError):
+        continue
+
+img_data = base64.b64decode(result['result']['data'])
+with open('/tmp/screenshot.png', 'wb') as f:
+    f.write(img_data)
+print(f'Saved screenshot: {len(img_data)} bytes')
+sock.close()
+"
+```
+
+**Navigate to a URL via CDP:**
+```bash
+curl -s http://localhost:9222/json/list | python3 -c "
+import sys, json, urllib.request
+tabs = json.load(sys.stdin)
+tab_id = tabs[0]['id']
+urllib.request.urlopen(f'http://localhost:9222/json/navigate/{tab_id}?url=https://example.com')
+print('Navigated')
+"
+```
+
+## Available tools
+
+- `launch_display` — start the virtual desktop (MUST call first)
+- `get_display` — check if a display is running
+- `destroy_display` — shut down the display
+- `scrot` — screenshot tool (via bash: `DISPLAY=:N scrot /tmp/shot.png`)
+- `xdotool` — X11 automation (via bash: `DISPLAY=:N xdotool key Return`)
 
 ## Tips
 
-- Prefer `browser_snapshot` (accessibility tree) over `browser_screenshot` for
-  finding elements — it's faster and more reliable.
-- Use `browser_screenshot` when you need to see what the page looks like
-  visually (layout, images, visual bugs).
-- The user can watch what you're doing in real-time by opening the noVNC URL
-  returned by `launch_display`.
-- The browser runs with `--no-sandbox` and `--disable-dev-shm-usage` flags
-  for container compatibility.
-- When done browsing, you can call `destroy_display` to free resources, but
-  it's fine to leave the display running for future use in the session.
-
-## Checking display status
-
-Call `get_display` to check whether a virtual desktop is currently running
-for this session.
+- The user can watch what you're doing in real-time by opening the noVNC
+  URL returned by `launch_display`.
+- Use `scrot` for quick screenshots. Use CDP for precise page screenshots.
+- Use `xdotool` for keyboard/mouse input outside of CDP.
+- Always check if the browser is running with `ps aux | grep chromium`
+  before trying to interact with it.
+- If the browser crashes, just relaunch it with the same command.

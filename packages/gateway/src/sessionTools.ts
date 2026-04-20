@@ -36,11 +36,12 @@ export function buildSessionTools(): Tool[] {
                         message:
                             `Virtual display ${info.display} is running. ` +
                             `The user can view it at: http://localhost:8787${info.noVncUrl}\n\n` +
-                            `IMPORTANT: The Playwright browser tools (browser_navigate, ` +
-                            `browser_click, browser_snapshot, etc.) will be available on ` +
-                            `your NEXT turn. After this tool returns, send your next message ` +
-                            `to start using them. Playwright is configured to use headed ` +
-                            `Chromium on this display — the user can watch in real-time via noVNC.`,
+                            `Next: launch Chromium on this display using bash:\n` +
+                            `  DISPLAY=${info.display} nohup chromium --no-sandbox ` +
+                            `--disable-dev-shm-usage --disable-gpu ` +
+                            `--remote-debugging-port=9222 "https://example.com" ` +
+                            `> /tmp/chromium.log 2>&1 & disown $!\n\n` +
+                            `Then take screenshots with: DISPLAY=${info.display} scrot /tmp/screenshot.png`,
                     };
                 } catch (err) {
                     return {
