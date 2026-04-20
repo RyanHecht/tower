@@ -733,7 +733,7 @@ export function Session({ client, sessionId, initialPrompt }: Props) {
                     <text>
                         <span fg="cyan">🖥</span>{" "}
                         <span fg="gray">Desktop:</span>{" "}
-                        <span fg="cyan" attributes={4}>{`http://localhost:6080${displayUrl}`}</span>
+                        <span fg="cyan" attributes={4}>{`http://localhost:8787${displayUrl}`}</span>
                     </text>
                 </box>
             ) : null}

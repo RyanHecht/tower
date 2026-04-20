@@ -33,9 +33,8 @@ services:
       GH_TOKEN: ${GH_TOKEN:-}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
     ports:
-      # Host-loopback only. Anyone on the LAN must not reach these ports.
-      - "127.0.0.1:8787:8787"   # gateway (HTTP + WS)
-      - "127.0.0.1:6080:6080"   # noVNC (browser-based desktop viewer)
+      # Host-loopback only. Anyone on the LAN must not reach this port.
+      - "127.0.0.1:8787:8787"   # gateway (HTTP + WS + noVNC display viewer)
     # Chrome needs adequate shared memory for headed rendering.
     shm_size: "2g"
     volumes:

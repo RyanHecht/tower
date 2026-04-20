@@ -35,7 +35,7 @@ export function buildSessionTools(): Tool[] {
                         noVncUrl: info.noVncUrl,
                         message:
                             `Virtual display ${info.display} is running. ` +
-                            `The user can view it at: http://localhost:6080${info.noVncUrl}\n\n` +
+                            `The user can view it at: http://localhost:8787${info.noVncUrl}\n\n` +
                             `IMPORTANT: The Playwright browser tools (browser_navigate, ` +
                             `browser_click, browser_snapshot, etc.) will be available on ` +
                             `your NEXT turn. After this tool returns, send your next message ` +

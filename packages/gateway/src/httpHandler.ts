@@ -1,6 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { promises as fs } from "node:fs";
+import { join, extname } from "node:path";
 import { verifyToken } from "./tokens.js";
 import { headlessSend } from "./headlessSend.js";
+import { getDisplay } from "./displayManager.js";
 import type { KeepAliveManager } from "./keepAlive.js";
 import type { CronScheduler } from "./crons.js";
 
@@ -47,6 +50,18 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, deps: Htt
     // Health probe — no auth.
     if (path === "/health" && method === "GET") {
         return json(res, 200, { ok: true });
+    }
+
+    // noVNC display viewer — no bearer auth (accessed directly in browser).
+    // /display/:sessionId/ serves the noVNC client pointed at this session.
+    // /display/:sessionId/websockify is handled as a WS upgrade in server.ts.
+    const displayMatch = path.match(/^\/display\/([^/]+)(\/.*)?$/);
+    if (displayMatch?.[1] && method === "GET") {
+        const sessionId = displayMatch[1];
+        const sub = displayMatch[2] ?? "/";
+        const info = getDisplay(sessionId);
+        if (!info) return json(res, 404, { ok: false, error: "no display for this session" });
+        return serveNoVnc(req, res, sessionId, sub);
     }
 
     // Everything else requires bearer auth.
@@ -219,4 +234,64 @@ function readBody(req: IncomingMessage): Promise<string | null> {
         req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
         req.on("error", () => resolve(null));
     });
+}
+
+// ── noVNC static file serving ────────────────────────────────────────────
+
+const NOVNC_ROOT = "/opt/noVNC";
+const MIME_TYPES: Record<string, string> = {
+    ".html": "text/html",
+    ".js": "application/javascript",
+    ".css": "text/css",
+    ".png": "image/png",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+    ".map": "application/json",
+};
+
+/**
+ * Serve noVNC static files for a session's display.
+ *
+ *   /display/:sessionId/           → vnc.html with websockify path auto-set
+ *   /display/:sessionId/foo.js     → /opt/noVNC/foo.js
+ */
+async function serveNoVnc(
+    _req: IncomingMessage,
+    res: ServerResponse,
+    sessionId: string,
+    sub: string,
+): Promise<void> {
+    // Root or trailing slash → serve vnc.html with the right websockify path.
+    if (sub === "/" || sub === "") {
+        // Redirect to vnc.html with autoconnect params
+        const wsPath = `/display/${sessionId}/websockify`;
+        const params = `autoconnect=true&resize=scale&path=${encodeURIComponent(wsPath)}`;
+        res.writeHead(302, { Location: `/display/${sessionId}/vnc.html?${params}` });
+        res.end();
+        return;
+    }
+
+    // Strip leading slash for file lookup.
+    const relPath = sub.startsWith("/") ? sub.slice(1) : sub;
+    const filePath = join(NOVNC_ROOT, relPath);
+
+    // Safety: don't escape the noVNC root.
+    if (!filePath.startsWith(NOVNC_ROOT)) {
+        res.writeHead(403);
+        res.end("Forbidden");
+        return;
+    }
+
+    try {
+        const data = await fs.readFile(filePath);
+        const ext = extname(filePath);
+        const ct = MIME_TYPES[ext] ?? "application/octet-stream";
+        res.writeHead(200, { "Content-Type": ct, "Content-Length": data.length });
+        res.end(data);
+    } catch {
+        res.writeHead(404);
+        res.end("Not Found");
+    }
 }

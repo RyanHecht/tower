@@ -110,7 +110,7 @@ ENV PROJECT_ROOT=/tower \
     CHROME_PATH=/usr/bin/chromium \
     CHROMIUM_FLAGS="--no-sandbox --disable-dev-shm-usage"
 
-# 8787 = gateway (HTTP + WS), 6080 = noVNC proxy (per-session displays)
-EXPOSE 8787 6080
+# 8787 = gateway (HTTP + WS + noVNC display viewer)
+EXPOSE 8787
 
 ENTRYPOINT ["/usr/local/bin/tower-entrypoint"]

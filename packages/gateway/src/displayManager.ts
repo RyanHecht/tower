@@ -8,17 +8,15 @@ import { config } from "./config.js";
  *
  * Each session that needs a headed browser gets its own Xvfb instance on a
  * unique X display number (:10, :11, …), plus a lightweight window manager
- * (fluxbox) and a VNC server (x11vnc) listening on 127.0.0.1:<vncPort>.
+ * (fluxbox) and a VNC server (x11vnc) on 127.0.0.1:<vncPort>.
  *
- * A single websockify instance on port 6080 serves the noVNC static files
- * and proxies WebSocket connections. Each session's noVNC viewer is accessed
- * at: http://host:6080/vnc.html?autoconnect=true&port=<wsPort>
+ * The gateway handles VNC WebSocket proxying and noVNC static file serving
+ * on its own port (8787) — no extra ports or processes needed. The noVNC
+ * viewer is accessed at:
+ *   http://host:8787/display/<sessionId>/
  *
- * Each session also gets its own websockify on a unique port (6080 + N)
- * that bridges WebSocket → VNC for that specific session.
- *
- * Displays are spawned on-demand (agent calls a tool) and torn down when
- * the session is deleted or the gateway shuts down.
+ * Displays are spawned on-demand and torn down when the session is deleted
+ * or the gateway shuts down.
  */
 
 const DISPLAY_RESOLUTION = process.env.TOWER_DISPLAY_RESOLUTION ?? "1024x768x24";
@@ -30,7 +28,6 @@ interface DisplayEntry {
     sessionId: string;
     displayNum: number;
     vncPort: number;
-    wsPort: number;
     /** `:N` string for DISPLAY env var. */
     display: string;
     procs: ChildProcess[];
@@ -39,34 +36,12 @@ interface DisplayEntry {
 
 const displays = new Map<string, DisplayEntry>();
 
-/** Shared noVNC static file server — started on first display launch. */
-let noVncServer: ChildProcess | null = null;
-const NOVNC_PORT = 6080;
-
 export interface DisplayInfo {
     sessionId: string;
     display: string;
     vncPort: number;
-    wsPort: number;
-    /** Relative URL path for the noVNC viewer (usable from the host). */
+    /** Relative URL path for the noVNC viewer. */
     noVncUrl: string;
-}
-
-function ensureNoVncServer(): void {
-    if (noVncServer) return;
-    // Serve noVNC static files on port 6080. This instance doesn't proxy
-    // any VNC backend — it just serves the HTML/JS/CSS. Each session's
-    // websockify on its own wsPort handles the actual VNC proxying.
-    // We use python3 http.server as a lightweight static file server.
-    noVncServer = spawn("python3", [
-        "-m", "http.server", String(NOVNC_PORT),
-        "--directory", "/opt/noVNC",
-        "--bind", "0.0.0.0",
-    ], {
-        stdio: "ignore",
-    });
-    noVncServer.on("exit", () => { noVncServer = null; });
-    console.log(`[display] noVNC static server started on port ${NOVNC_PORT}`);
 }
 
 /**
@@ -80,7 +55,6 @@ export async function launchDisplay(sessionId: string): Promise<DisplayInfo> {
     const displayNum = nextDisplayNum++;
     const display = `:${displayNum}`;
     const vncPort = 5900 + displayNum;
-    const wsPort = NOVNC_PORT + displayNum - 10 + 1; // 6081, 6082, ...
 
     const logDir = config.paths.logs;
     await mkdir(logDir, { recursive: true });
@@ -123,7 +97,7 @@ export async function launchDisplay(sessionId: string): Promise<DisplayInfo> {
     // 2. Window manager
     spawnLogged("fluxbox", [], { DISPLAY: display });
 
-    // 3. VNC server (loopback only — websockify bridges it)
+    // 3. VNC server (loopback only — gateway proxies WebSocket → TCP)
     spawnLogged("x11vnc", [
         "-display", display,
         "-nopw",
@@ -133,27 +107,17 @@ export async function launchDisplay(sessionId: string): Promise<DisplayInfo> {
         "-rfbport", String(vncPort),
     ]);
 
-    // 4. Per-session websockify (WebSocket → VNC bridge)
-    spawnLogged("websockify", [
-        `0.0.0.0:${wsPort}`,
-        `127.0.0.1:${vncPort}`,
-    ]);
-
-    // Start the shared noVNC static server if not already running.
-    ensureNoVncServer();
-
     const entry: DisplayEntry = {
         sessionId,
         displayNum,
         vncPort,
-        wsPort,
         display,
         procs,
         log,
     };
     displays.set(sessionId, entry);
 
-    console.log(`[display] launched ${display} for session ${sessionId} (vnc=${vncPort}, ws=${wsPort})`);
+    console.log(`[display] launched ${display} for session ${sessionId} (vnc=${vncPort})`);
     return toInfo(entry);
 }
 
@@ -172,18 +136,17 @@ export async function destroyDisplay(sessionId: string): Promise<void> {
     }
     entry.log.end();
     console.log(`[display] destroyed ${entry.display} for session ${sessionId}`);
-
-    // Shut down the shared static server if no displays remain.
-    if (displays.size === 0 && noVncServer) {
-        try { noVncServer.kill("SIGTERM"); } catch { /* ignore */ }
-        noVncServer = null;
-    }
 }
 
 /** Get display info for a session, or undefined if none is running. */
 export function getDisplay(sessionId: string): DisplayInfo | undefined {
     const entry = displays.get(sessionId);
     return entry ? toInfo(entry) : undefined;
+}
+
+/** Get the VNC port for a session (used by the WS→TCP proxy). */
+export function getVncPort(sessionId: string): number | undefined {
+    return displays.get(sessionId)?.vncPort;
 }
 
 /** List all active displays. */
@@ -202,7 +165,6 @@ function toInfo(entry: DisplayEntry): DisplayInfo {
         sessionId: entry.sessionId,
         display: entry.display,
         vncPort: entry.vncPort,
-        wsPort: entry.wsPort,
-        noVncUrl: `/vnc.html?autoconnect=true&resize=scale&port=${entry.wsPort}`,
+        noVncUrl: `/display/${entry.sessionId}/`,
     };
 }
