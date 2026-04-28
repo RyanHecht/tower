@@ -35,7 +35,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 #   python3, python3-websockify — WebSocket→TCP bridge for noVNC
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        bash ca-certificates curl netcat-openbsd \
+        bash ca-certificates curl netcat-openbsd git \
         xvfb x11vnc fluxbox xdotool \
         chromium chromium-sandbox fonts-liberation fonts-noto-color-emoji \
         scrot \

@@ -107,7 +107,7 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                     const cwd = await resolveWorkspace(msg.workspace);
                     const client = await getCopilotClient();
                     let handler: ((req: PermissionRequest) => Promise<PermissionRequestResult>) | null = null;
-                    const cfg = buildSessionConfig("", store, keepAlive);
+                    const cfg = await buildSessionConfig("", store, keepAlive);
                     const session = await client.createSession({
                         ...(msg.model ? { model: msg.model } : {}),
                         workingDirectory: cwd,
@@ -117,6 +117,7 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                         ...(cfg.skillDirectories.length > 0 ? { skillDirectories: cfg.skillDirectories } : {}),
                         ...(cfg.disabledSkills.length > 0 ? { disabledSkills: cfg.disabledSkills } : {}),
                         ...(cfg.customAgents.length > 0 ? { customAgents: cfg.customAgents } : {}),
+                        ...(cfg.coreMemory ? { systemMessage: { mode: "append" as const, content: `\n\n<tower-core-memory>\n${cfg.coreMemory}\n</tower-core-memory>` } } : {}),
                     });
                     const policy = buildSessionPolicy(session.sessionId, mode, allow, deny);
                     handler = policy.handler;
@@ -177,7 +178,7 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                         await ensurePersistedDisplay(msg.sessionId, store);
                         const client = await getCopilotClient();
                         let handler: ((req: PermissionRequest) => Promise<PermissionRequestResult>) | null = null;
-                        const cfg = buildSessionConfig(msg.sessionId, store, keepAlive);
+                        const cfg = await buildSessionConfig(msg.sessionId, store, keepAlive);
                         session = await client.resumeSession(msg.sessionId, {
                             onPermissionRequest: (req) => handler!(req),
                             tools: cfg.tools,
@@ -185,6 +186,7 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                             ...(cfg.skillDirectories.length > 0 ? { skillDirectories: cfg.skillDirectories } : {}),
                             ...(cfg.disabledSkills.length > 0 ? { disabledSkills: cfg.disabledSkills } : {}),
                             ...(cfg.customAgents.length > 0 ? { customAgents: cfg.customAgents } : {}),
+                            ...(cfg.coreMemory ? { systemMessage: { mode: "append" as const, content: `\n\n<tower-core-memory>\n${cfg.coreMemory}\n</tower-core-memory>` } } : {}),
                         });
                         policy = buildSessionPolicy(msg.sessionId, mode, allow, deny);
                         handler = policy.handler;

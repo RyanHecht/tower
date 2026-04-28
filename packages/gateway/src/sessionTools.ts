@@ -7,6 +7,7 @@ import { setDisplayUrl } from "./sessionAttachments.js";
 import { config } from "./config.js";
 import type { StateStore } from "./state.js";
 import * as messages from "./messageStore.js";
+import * as vault from "./vaultStore.js";
 import { headlessSend } from "./headlessSend.js";
 import type { KeepAliveManager } from "./keepAlive.js";
 import { getCopilotClient } from "./copilot.js";
@@ -368,6 +369,180 @@ export function buildSessionTools(store: StateStore, keepAlive: KeepAliveManager
                             lastActivity: s.modifiedTime?.toISOString?.() ?? undefined,
                         })),
                     };
+                } catch (err) {
+                    return { status: "error", message: (err as Error).message };
+                }
+            },
+        },
+
+        // ── Memory tools ───────────────────────────────────────────────
+
+        {
+            name: "tower_remember",
+            description:
+                "Store a fact in Tower's persistent knowledge vault. The fact is " +
+                "appended to a topic file in _memory/. Provide a topic to organize " +
+                "facts (e.g., 'people/bob', 'topics/rust', 'topics/tower'). " +
+                "Facts persist across sessions and container restarts.",
+            parameters: {
+                type: "object",
+                properties: {
+                    fact: { type: "string", description: "The fact to remember (concise, one statement)." },
+                    topic: { type: "string", description: "Topic path (e.g., 'people/bob', 'topics/rust'). Determines which file the fact is stored in." },
+                },
+                required: ["fact"],
+            },
+            handler: async (args: unknown) => {
+                const a = args as { fact: string; topic?: string };
+                const topic = a.topic ?? "topics/general";
+                try {
+                    await vault.appendToMemory(topic, `- ${a.fact}`, `memory: ${a.fact.slice(0, 60)}`);
+                    return { status: "ok", topic, fact: a.fact };
+                } catch (err) {
+                    return { status: "error", message: (err as Error).message };
+                }
+            },
+        },
+        {
+            name: "tower_recall",
+            description:
+                "Search Tower's knowledge vault for information. Uses grep to find " +
+                "matching facts across all memory files, core memory, and session " +
+                "summaries. Returns matching lines with file paths.",
+            parameters: {
+                type: "object",
+                properties: {
+                    query: { type: "string", description: "Search query (keywords or phrases)." },
+                    vault_name: { type: "string", description: "Optional: search a specific user vault instead of the main vault." },
+                },
+                required: ["query"],
+            },
+            handler: async (args: unknown) => {
+                const a = args as { query: string; vault_name?: string };
+                try {
+                    const results = await vault.vaultSearch(a.query, a.vault_name);
+                    if (results.length === 0) return { status: "ok", count: 0, message: "No matches found." };
+                    return { status: "ok", count: results.length, results };
+                } catch (err) {
+                    return { status: "error", message: (err as Error).message };
+                }
+            },
+        },
+        {
+            name: "tower_core_read",
+            description:
+                "Read the core memory — the persistent facts that are injected into " +
+                "every session's system prompt. Sections: 'user' (who the user is), " +
+                "'preferences' (how they like things done), 'context' (current goals). " +
+                "Omit section to read all.",
+            parameters: {
+                type: "object",
+                properties: {
+                    section: {
+                        type: "string",
+                        enum: ["user", "preferences", "context"],
+                        description: "Which core memory section to read. Omit to read all.",
+                    },
+                },
+            },
+            handler: async (args: unknown) => {
+                const a = (args ?? {}) as { section?: string };
+                try {
+                    if (a.section) {
+                        const content = await vault.readCoreSection(a.section);
+                        return { status: "ok", section: a.section, content };
+                    }
+                    const content = await vault.readCoreMemory();
+                    return { status: "ok", content };
+                } catch (err) {
+                    return { status: "error", message: (err as Error).message };
+                }
+            },
+        },
+        {
+            name: "tower_core_update",
+            description:
+                "Update a section of core memory. Core memory is always injected into " +
+                "the system prompt of every session, so keep it concise and current. " +
+                "You should REWRITE the entire section content (not append) — replace " +
+                "stale facts with current ones. Sections: 'user', 'preferences', 'context'.",
+            parameters: {
+                type: "object",
+                properties: {
+                    section: {
+                        type: "string",
+                        enum: ["user", "preferences", "context"],
+                        description: "Which core memory section to update.",
+                    },
+                    content: { type: "string", description: "The new content for this section (markdown). Replaces the entire section." },
+                },
+                required: ["section", "content"],
+            },
+            handler: async (args: unknown) => {
+                const a = args as { section: string; content: string };
+                try {
+                    await vault.updateCoreSection(a.section, a.content);
+                    return { status: "ok", section: a.section, message: "Core memory updated." };
+                } catch (err) {
+                    return { status: "error", message: (err as Error).message };
+                }
+            },
+        },
+        {
+            name: "tower_vault_read",
+            description: "Read a file from the knowledge vault (or a named user vault).",
+            parameters: {
+                type: "object",
+                properties: {
+                    path: { type: "string", description: "File path relative to vault root (e.g., '_memory/people/bob.md')." },
+                    vault: { type: "string", description: "Optional: name of a user vault." },
+                },
+                required: ["path"],
+            },
+            handler: async (args: unknown) => {
+                const a = args as { path: string; vault?: string };
+                const content = await vault.vaultRead(a.path, a.vault);
+                if (content === null) return { status: "error", message: `File not found: ${a.path}` };
+                return { status: "ok", path: a.path, content };
+            },
+        },
+        {
+            name: "tower_vault_write",
+            description: "Write a file to the knowledge vault. Auto-commits to git.",
+            parameters: {
+                type: "object",
+                properties: {
+                    path: { type: "string", description: "File path relative to vault root." },
+                    content: { type: "string", description: "File content (markdown)." },
+                    vault: { type: "string", description: "Optional: name of a user vault." },
+                },
+                required: ["path", "content"],
+            },
+            handler: async (args: unknown) => {
+                const a = args as { path: string; content: string; vault?: string };
+                try {
+                    await vault.vaultWrite(a.path, a.content, a.vault);
+                    return { status: "ok", path: a.path };
+                } catch (err) {
+                    return { status: "error", message: (err as Error).message };
+                }
+            },
+        },
+        {
+            name: "tower_vault_list",
+            description: "List markdown files in the knowledge vault.",
+            parameters: {
+                type: "object",
+                properties: {
+                    path: { type: "string", description: "Directory path relative to vault root. Omit to list all." },
+                    vault: { type: "string", description: "Optional: name of a user vault." },
+                },
+            },
+            handler: async (args: unknown) => {
+                const a = (args ?? {}) as { path?: string; vault?: string };
+                try {
+                    const files = await vault.vaultList(a.path, a.vault);
+                    return { status: "ok", count: files.length, files };
                 } catch (err) {
                     return { status: "error", message: (err as Error).message };
                 }

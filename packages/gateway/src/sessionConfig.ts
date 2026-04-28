@@ -2,6 +2,7 @@ import type { MCPServerConfig, CustomAgentConfig, Tool } from "@github/copilot-s
 import { getDisplay, launchDisplay } from "./displayManager.js";
 import { setDisplayUrl } from "./sessionAttachments.js";
 import { buildSessionTools } from "./sessionTools.js";
+import { readCoreMemory } from "./vaultStore.js";
 import type { StateStore } from "./state.js";
 import type { KeepAliveManager } from "./keepAlive.js";
 
@@ -107,6 +108,8 @@ export interface SessionConfigBundle {
     customAgents: CustomAgentConfig[];
     /** Custom tools that run inside the gateway process. */
     tools: Tool[];
+    /** Core memory to append to the system prompt. */
+    coreMemory: string;
 }
 
 /**
@@ -115,7 +118,7 @@ export interface SessionConfigBundle {
  * Call this right before `client.createSession()` / `client.resumeSession()`
  * and spread the result into the SDK config.
  */
-export function buildSessionConfig(sessionId: string, store: StateStore, keepAlive: KeepAliveManager): SessionConfigBundle {
+export async function buildSessionConfig(sessionId: string, store: StateStore, keepAlive: KeepAliveManager): Promise<SessionConfigBundle> {
     const mcpServers: Record<string, MCPServerConfig> = {
         ...builtinMcpServers(sessionId),
         ...userConfig.mcpServers,
@@ -136,8 +139,9 @@ export function buildSessionConfig(sessionId: string, store: StateStore, keepAli
     ];
 
     const tools: Tool[] = buildSessionTools(store, keepAlive);
+    const coreMemory = await readCoreMemory();
 
-    return { mcpServers, skillDirectories, disabledSkills, customAgents, tools };
+    return { mcpServers, skillDirectories, disabledSkills, customAgents, tools, coreMemory };
 }
 
 /**

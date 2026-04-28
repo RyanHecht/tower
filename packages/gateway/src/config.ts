@@ -27,6 +27,11 @@ export const config = {
          *  synced from here on display launch and flushed back on destroy,
          *  so sign-ins accumulate organically across sessions. */
         chromiumShared: path.join(ROOT, "data", "chromium-shared"),
+        /** Git-backed knowledge vault. Contains core memory, archival memory,
+         *  session summaries, and project working directories. */
+        vault: path.join(ROOT, "data", "vault"),
+        /** User-added external vaults (read/write). */
+        vaults: path.join(ROOT, "data", "vaults"),
     },
 } as const;
 
