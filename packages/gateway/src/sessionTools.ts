@@ -233,7 +233,13 @@ export function buildSessionTools(store: StateStore, keepAlive: KeepAliveManager
                     // attached and unattached sessions.
                     if (msg.priority === "urgent") {
                         for (const recipientId of msg.to) {
-                            headlessSend(recipientId, `[URGENT MESSAGE from ${msg.from}]\n\n${msg.body}`, keepAlive)
+                            const injected =
+                                `[TOWER MESSAGE — id: ${msg.id}, from: ${msg.from}, priority: ${msg.priority}]\n\n` +
+                                `${msg.body}\n\n` +
+                                `---\n` +
+                                `You MUST respond to this message using tower_reply(messageId: "${msg.id}", message: "your response"). ` +
+                                `Do NOT just respond in your conversation — the sender is a different session and can only see your reply through the messaging system.`;
+                            headlessSend(recipientId, injected, keepAlive)
                                 .catch((err) => console.error(`[messages] urgent inject failed for ${recipientId}:`, (err as Error).message));
                         }
                     }
@@ -326,7 +332,13 @@ export function buildSessionTools(store: StateStore, keepAlive: KeepAliveManager
                 // Urgent replies also get injected.
                 if (msg.priority === "urgent") {
                     for (const recipientId of msg.to) {
-                        headlessSend(recipientId, `[URGENT REPLY from ${msg.from}]\n\n${msg.body}`, keepAlive)
+                        const injected =
+                            `[TOWER REPLY — id: ${msg.id}, from: ${msg.from}, in reply to: ${a.messageId}]\n\n` +
+                            `${msg.body}\n\n` +
+                            `---\n` +
+                            `This is a reply via the Tower messaging system. Use tower_read("${msg.id}") to see the full message, ` +
+                            `or tower_reply("${msg.id}", "...") to continue the thread.`;
+                        headlessSend(recipientId, injected, keepAlive)
                             .catch((err) => console.error(`[messages] urgent inject failed for ${recipientId}:`, (err as Error).message));
                     }
                 }

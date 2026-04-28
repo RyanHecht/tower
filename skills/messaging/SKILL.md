@@ -66,6 +66,20 @@ tower_sessions()
 Lists all sessions with their ID, summary, workspace, and active status.
 Use this to find who to message.
 
+## IMPORTANT: Responding to messages
+
+When you receive a message from another session (either via tower_inbox
+or injected as a prompt), you MUST respond using `tower_reply` — not by
+just answering in your own conversation. The sender is a **different
+session** and cannot see your conversation output. Only `tower_reply`
+delivers your response back to them.
+
+```
+1. You receive: "[TOWER MESSAGE — id: msg_abc123, from: session-X ...]"
+2. Do whatever work is needed to answer
+3. tower_reply(messageId: "msg_abc123", message: "Here's what I found: ...")
+```
+
 ## Patterns
 
 **Delegate a task:**
