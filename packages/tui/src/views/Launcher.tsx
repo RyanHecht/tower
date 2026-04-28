@@ -229,7 +229,7 @@ export function Launcher({ client, routerSessionId, lastSessionId, onOpen }: Pro
                 const { execSync } = require("child_process") as typeof import("child_process");
                 let clip = "";
                 try {
-                    clip = execSync("xclip -selection clipboard -o 2>/dev/null || xsel --clipboard --output 2>/dev/null || wl-paste 2>/dev/null", { encoding: "utf8", timeout: 2000 });
+                    clip = execSync("wl-paste 2>/dev/null || xclip -selection clipboard -o 2>/dev/null || xsel --clipboard --output 2>/dev/null", { encoding: "utf8", timeout: 2000 });
                 } catch {
                     try {
                         clip = execSync("pbpaste", { encoding: "utf8", timeout: 2000 });
