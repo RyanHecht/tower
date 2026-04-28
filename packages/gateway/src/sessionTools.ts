@@ -228,13 +228,13 @@ export function buildSessionTools(store: StateStore, keepAlive: KeepAliveManager
                         tags: a.tags,
                     });
 
-                    // Urgent: inject as immediate prompt to online recipients.
+                    // Urgent: inject as immediate prompt to recipients.
+                    // Always attempt delivery — headlessSend handles both
+                    // attached and unattached sessions.
                     if (msg.priority === "urgent") {
                         for (const recipientId of msg.to) {
-                            if (attachedSessions.has(recipientId)) {
-                                headlessSend(recipientId, `[URGENT MESSAGE from ${msg.from}]\n\n${msg.body}`, keepAlive)
-                                    .catch((err) => console.error(`[messages] urgent inject failed for ${recipientId}:`, (err as Error).message));
-                            }
+                            headlessSend(recipientId, `[URGENT MESSAGE from ${msg.from}]\n\n${msg.body}`, keepAlive)
+                                .catch((err) => console.error(`[messages] urgent inject failed for ${recipientId}:`, (err as Error).message));
                         }
                     }
 
@@ -326,10 +326,8 @@ export function buildSessionTools(store: StateStore, keepAlive: KeepAliveManager
                 // Urgent replies also get injected.
                 if (msg.priority === "urgent") {
                     for (const recipientId of msg.to) {
-                        if (attachedSessions.has(recipientId)) {
-                            headlessSend(recipientId, `[URGENT REPLY from ${msg.from}]\n\n${msg.body}`, keepAlive)
-                                .catch((err) => console.error(`[messages] urgent inject failed for ${recipientId}:`, (err as Error).message));
-                        }
+                        headlessSend(recipientId, `[URGENT REPLY from ${msg.from}]\n\n${msg.body}`, keepAlive)
+                            .catch((err) => console.error(`[messages] urgent inject failed for ${recipientId}:`, (err as Error).message));
                     }
                 }
 

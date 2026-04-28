@@ -201,6 +201,19 @@ export function Session({ client, sessionId, initialPrompt }: Props) {
     const [displayUrl, setDisplayUrl] = useState<string | null>(null);
     const [now, setNow] = useState(Date.now());
 
+    // ── Session overview popup ───────────────────────────────────────
+    interface OverviewSession {
+        sessionId: string;
+        summary?: string;
+        workspace?: string;
+        isActive: boolean;
+        busy: boolean;
+        lastIntent?: string;
+        queuedSends: number;
+        hasDisplay: boolean;
+    }
+    const [overview, setOverview] = useState<OverviewSession[] | null>(null);
+
     // ── Slash-command autocomplete state ──────────────────────────────
     const [inputText, setInputText] = useState("");
     const [selectedIdx, setSelectedIdx] = useState(0);
@@ -525,11 +538,32 @@ export function Session({ client, sessionId, initialPrompt }: Props) {
         }
 
         if (key.name === "escape") {
-            // Abort an in-flight turn. No-op if idle.
+            // Dismiss overview if open; otherwise abort an in-flight turn.
+            if (overview) {
+                setOverview(null);
+                return;
+            }
             if (status.phase.kind !== "idle") {
                 client.notify({ type: "session.abort", sessionId });
                 apiRef.current!.push({ kind: "info", text: "(abort sent)" });
                 setStatus((prev) => ({ ...prev, phase: { kind: "idle" }, since: Date.now() }));
+            }
+            return;
+        }
+        if (key.ctrl && key.name === "o") {
+            // Toggle session overview popup.
+            if (overview) {
+                setOverview(null);
+            } else {
+                client.request<{ sessions: OverviewSession[] }>("session.listAll")
+                    .then((resp) => {
+                        // session.listAll doesn't have busy/intent — enrich
+                        // from the HTTP endpoint would be better, but reuse
+                        // what we have for now.
+                        const items = (Array.isArray(resp) ? resp : resp.sessions ?? resp) as OverviewSession[];
+                        setOverview(items);
+                    })
+                    .catch(() => setOverview([]));
             }
             return;
         }
@@ -655,6 +689,67 @@ export function Session({ client, sessionId, initialPrompt }: Props) {
 
     return (
         <box style={{ flexDirection: "column", flexGrow: 1 }}>
+            {/* Session overview popup — absolute overlay */}
+            {overview ? (
+                <box
+                    style={{
+                        position: "absolute",
+                        top: 1,
+                        left: 2,
+                        right: 2,
+                        bottom: 4,
+                        zIndex: 20,
+                        border: true,
+                        borderColor: "#7dd3fc",
+                        backgroundColor: "#1a1a2e",
+                        flexDirection: "column",
+                        padding: 1,
+                    }}
+                    title="Sessions (Ctrl+O / Esc to close)"
+                >
+                    <scrollbox style={{ flexGrow: 1 }}>
+                        {overview.length === 0 ? (
+                            <text fg="gray">(no sessions)</text>
+                        ) : (
+                            overview.map((s) => {
+                                const isCurrent = s.sessionId === sessionId;
+                                const status_icon = s.busy
+                                    ? "⟳"
+                                    : s.isActive
+                                      ? "●"
+                                      : "○";
+                                const status_color = s.busy
+                                    ? "yellow"
+                                    : s.isActive
+                                      ? "green"
+                                      : "gray";
+                                const display_icon = s.hasDisplay ? " 🖥" : "";
+                                const summary = s.summary
+                                    ? s.summary.slice(0, 70)
+                                    : "(no summary)";
+                                const intent = s.lastIntent
+                                    ? ` — ${s.lastIntent}`
+                                    : "";
+                                const queued = s.queuedSends > 0
+                                    ? ` (${s.queuedSends} queued)`
+                                    : "";
+                                return (
+                                    <text key={s.sessionId}>
+                                        <span fg={status_color}>{status_icon}</span>{" "}
+                                        <span fg={isCurrent ? "#7dd3fc" : "white"} attributes={isCurrent ? 1 : 0}>
+                                            {s.sessionId.slice(0, 8)}
+                                        </span>
+                                        <span fg="gray">{display_icon}{queued}{intent}</span>
+                                        {"\n"}
+                                        <span fg="gray">  {summary}</span>
+                                    </text>
+                                );
+                            })
+                        )}
+                    </scrollbox>
+                </box>
+            ) : null}
+
             {/* Timeline — no border, just a padded scroll area. */}
             <scrollbox
                 stickyScroll

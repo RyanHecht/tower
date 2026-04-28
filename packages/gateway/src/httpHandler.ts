@@ -3,7 +3,10 @@ import { promises as fs } from "node:fs";
 import { join, extname } from "node:path";
 import { verifyToken } from "./tokens.js";
 import { headlessSend } from "./headlessSend.js";
-import { getDisplay } from "./displayManager.js";
+import { getDisplay, listDisplays } from "./displayManager.js";
+import { getStatus } from "./sessionAttachments.js";
+import { attachedSessions } from "./attached.js";
+import { getCopilotClient } from "./copilot.js";
 import type { KeepAliveManager } from "./keepAlive.js";
 import type { CronScheduler } from "./crons.js";
 
@@ -76,6 +79,11 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, deps: Htt
         return await handleWebhook(req, res, hookMatch[1], deps);
     }
 
+    // GET /sessions — enriched overview of all sessions
+    if (path === "/sessions" && method === "GET") {
+        return await handleSessionList(res);
+    }
+
     // /crons routes
     if (path === "/crons" && method === "GET") {
         return json(res, 200, { ok: true, crons: deps.crons.list() });
@@ -107,6 +115,32 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, deps: Htt
 }
 
 // ── handlers ─────────────────────────────────────────────────────────────
+
+async function handleSessionList(res: ServerResponse): Promise<void> {
+    try {
+        const client = await getCopilotClient();
+        const list = await client.listSessions();
+        const items = list.map((s) => {
+            const sid = s.sessionId;
+            const status = getStatus(sid);
+            const display = getDisplay(sid);
+            return {
+                sessionId: sid,
+                summary: s.summary,
+                workspace: s.context?.cwd,
+                lastActivityAt: s.modifiedTime?.toISOString?.() ?? undefined,
+                isActive: attachedSessions.has(sid),
+                busy: status?.busy ?? false,
+                lastIntent: status?.lastIntent,
+                queuedSends: status?.queuedSends ?? 0,
+                hasDisplay: !!display,
+            };
+        });
+        json(res, 200, { ok: true, sessions: items });
+    } catch (err) {
+        json(res, 500, { ok: false, error: (err as Error).message });
+    }
+}
 
 async function handleWebhook(
     req: IncomingMessage,
