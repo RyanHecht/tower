@@ -2,7 +2,7 @@ import type { MCPServerConfig, CustomAgentConfig, Tool } from "@github/copilot-s
 import { getDisplay, launchDisplay } from "./displayManager.js";
 import { setDisplayUrl } from "./sessionAttachments.js";
 import { buildSessionTools } from "./sessionTools.js";
-import { readCoreMemory } from "./vaultStore.js";
+import { readCoreMemory, readSchema } from "./vaultStore.js";
 import type { StateStore } from "./state.js";
 import type { KeepAliveManager } from "./keepAlive.js";
 
@@ -39,6 +39,9 @@ export interface UserSessionConfig {
     disabledSkills?: string[];
     /** Custom agents available in every session. */
     customAgents?: CustomAgentConfig[];
+    /** Workspace name for the triage session. When set, inbox items trigger
+     *  a headlessSend to the active session in this workspace. */
+    triageWorkspace?: string;
 }
 
 const USER_CONFIG_PATH = join(config.paths.data, "session-config.json");
@@ -66,6 +69,11 @@ export async function loadUserSessionConfig(): Promise<void> {
     }
 }
 
+/** Get the configured triage workspace name (if any). */
+export function getTriageWorkspace(): string | undefined {
+    return userConfig.triageWorkspace;
+}
+
 // ---------------------------------------------------------------------------
 // Built-in MCP servers
 // ---------------------------------------------------------------------------
@@ -74,10 +82,11 @@ export async function loadUserSessionConfig(): Promise<void> {
 function builtinMcpServers(sessionId: string): Record<string, MCPServerConfig> {
     const servers: Record<string, MCPServerConfig> = {};
 
-    // Playwright browser automation — only added when the session has a
-    // virtual display, so the headed browser has somewhere to render.
+    // Only added when the session has a virtual display.
     const display = getDisplay(sessionId);
     if (display) {
+        // Playwright browser automation — structured browser control via
+        // accessibility tree and CDP. Manages its own browser instance.
         servers["playwright"] = {
             command: "playwright-mcp",
             args: [
@@ -89,6 +98,17 @@ function builtinMcpServers(sessionId: string): Record<string, MCPServerConfig> {
                 DISPLAY: display.display,
                 // Chromium flags for the container environment.
                 CHROMIUM_FLAGS: "--no-sandbox --disable-dev-shm-usage",
+            },
+            tools: ["*"],
+        };
+
+        // Computer-use desktop control — generic mouse/keyboard/screenshot
+        // tools for interacting with any application on the display.
+        servers["computer-use"] = {
+            command: "node",
+            args: [join(config.root, "packages/computer-use-mcp/dist/index.js")],
+            env: {
+                DISPLAY: display.display,
             },
             tools: ["*"],
         };
@@ -108,8 +128,57 @@ export interface SessionConfigBundle {
     customAgents: CustomAgentConfig[];
     /** Custom tools that run inside the gateway process. */
     tools: Tool[];
-    /** Core memory to append to the system prompt. */
-    coreMemory: string;
+    /** Structured system prompt content to append. */
+    systemPromptContent: string;
+}
+
+// ---------------------------------------------------------------------------
+// System prompt builder
+// ---------------------------------------------------------------------------
+
+const TOWER_CONTEXT = `You are an agent running inside Tower, a long-lived daemon. Your session \
+persists even when the user disconnects — you keep working. You have access to:
+
+- **Vault** (tower_vault_*) — persistent knowledge base. Read, write, append, list, and search files.
+- **Vault inbox** (tower_vault_inbox_*) — external data awaiting triage/processing.
+- **Messaging** (tower_msg_*) — send/receive messages between sessions on this host.
+- **Display** (tower_display_*) — virtual desktop with headed browser and terminal.
+- **Sessions** (tower_session_list) — discover other sessions on this host.
+
+Proactive behavior:
+- When you learn important facts during conversation, store them in the vault \
+using tower_vault_remember (quick facts) or tower_vault_append/tower_vault_write \
+(structured updates). Follow the vault schema below for where things go.
+- Core memory (_core/) is injected into every session's system prompt. Keep it \
+concise and current — rewrite sections rather than appending.`;
+
+const SCHEMA_TOKEN_BUDGET = 2000;
+
+async function buildSystemPrompt(): Promise<string> {
+    const parts: string[] = [];
+
+    // 1. Tower context (static).
+    parts.push(`<tower-context>\n${TOWER_CONTEXT}\n</tower-context>`);
+
+    // 2. Vault schema (user-defined).
+    let schema = await readSchema();
+    if (schema.trim()) {
+        // Rough token estimate: ~4 chars per token.
+        if (schema.length > SCHEMA_TOKEN_BUDGET * 4) {
+            schema = schema.slice(0, SCHEMA_TOKEN_BUDGET * 4) +
+                "\n\n[Schema truncated — keep _schema.md under ~2000 tokens]";
+            console.warn("[sessionConfig] _schema.md exceeds token budget, truncated");
+        }
+        parts.push(`<tower-vault-schema>\n${schema.trim()}\n</tower-vault-schema>`);
+    }
+
+    // 3. Core memory (user/agent-maintained).
+    const coreMemory = await readCoreMemory();
+    if (coreMemory.trim()) {
+        parts.push(`<tower-core-memory>\n${coreMemory.trim()}\n</tower-core-memory>`);
+    }
+
+    return parts.join("\n\n");
 }
 
 /**
@@ -139,9 +208,9 @@ export async function buildSessionConfig(sessionId: string, store: StateStore, k
     ];
 
     const tools: Tool[] = buildSessionTools(store, keepAlive);
-    const coreMemory = await readCoreMemory();
+    const systemPromptContent = await buildSystemPrompt();
 
-    return { mcpServers, skillDirectories, disabledSkills, customAgents, tools, coreMemory };
+    return { mcpServers, skillDirectories, disabledSkills, customAgents, tools, systemPromptContent };
 }
 
 /**

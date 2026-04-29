@@ -195,6 +195,7 @@ All HTTP routes except `/health` require `Authorization: Bearer <token>`.
 | -------- | ------------------ | ---------------------------------------------- |
 | `GET`    | `/health`          | Health probe (no auth)                         |
 | `POST`   | `/hook/:sessionId` | Fire-and-forget prompt send (webhook ingress)  |
+| `POST`   | `/ingest`          | Add item to vault inbox (external data)        |
 | `GET`    | `/crons`           | List all cron jobs                             |
 | `POST`   | `/crons`           | Create a cron job                              |
 | `GET`    | `/crons/:id`       | Get a cron job                                 |
@@ -214,6 +215,40 @@ curl -X POST http://127.0.0.1:8787/hook/<sessionId> \
   -H "Content-Type: application/json" \
   -d '{"prompt": "check the build status"}'
 ```
+
+**Vault inbox ingestion** (`POST /ingest`):
+
+Push external data (emails, Slack messages, meeting notes, etc.) into the vault
+inbox for triage. Body can be JSON or plain text:
+
+```sh
+# JSON
+curl -X POST http://127.0.0.1:8787/ingest \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source": "email from alice@example.com",
+    "category": "emails",
+    "title": "Q2 Budget Update",
+    "body": "The GPU allocation is approved...",
+    "externalId": "msg-id-123"
+  }'
+
+# Plain text with headers
+curl -X POST http://127.0.0.1:8787/ingest \
+  -H "Authorization: Bearer <token>" \
+  -H "X-Ingest-Source: slack-bot" \
+  -H "X-Ingest-Category: messages" \
+  -d 'Bob mentioned the deploy is delayed until Friday'
+```
+
+Returns `201 Created` with `{ ok, itemId, path }` on success. If `externalId`
+matches an existing item, returns `200` with `{ ok, itemId, duplicate: true }`
+(idempotent, not an error). If `triageWorkspace` is configured in
+`session-config.json`, a triage prompt is automatically sent to the active
+session in that workspace.
+
+Example connector scripts for email (IMAP) and RSS are in `examples/connectors/`.
 
 **Cron jobs** (`POST /crons`):
 
@@ -386,6 +421,7 @@ npm run token mint -- <label>
 ```
 packages/gateway/src/
   config.ts              # paths, env, defaults
+  toolNames.ts           # single source of truth for all tool name constants
   tokens.ts              # bearer token verification
   workspaces.ts          # workspace dir resolution + safety
   rules.ts               # allow/deny rule parser + matcher (kind(arg) syntax)
@@ -398,9 +434,12 @@ packages/gateway/src/
   attached.ts            # lightweight session-id tracker for listAll isActive
   headlessSend.ts        # send a prompt without an interactive subscriber
   crons.ts               # cron scheduler (persisted, auto-disable on failure)
-  httpHandler.ts         # HTTP routes (health, webhooks, cron CRUD)
+  httpHandler.ts         # HTTP routes (health, webhooks, ingest, cron CRUD)
   server.ts              # HTTP + WS server (shared port)
   connection.ts          # per-WS connection handler
+  sessionConfig.ts       # session config + structured system prompt builder
+  sessionTools.ts        # agent-callable tools (vault, inbox, msg, display)
+  vaultStore.ts          # git-backed vault: core memory, search, inbox, file locking
   index.ts               # entry
 packages/protocol/src/
   index.ts               # shared inbound/outbound message types + CronJobDef

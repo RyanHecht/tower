@@ -117,7 +117,7 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                         ...(cfg.skillDirectories.length > 0 ? { skillDirectories: cfg.skillDirectories } : {}),
                         ...(cfg.disabledSkills.length > 0 ? { disabledSkills: cfg.disabledSkills } : {}),
                         ...(cfg.customAgents.length > 0 ? { customAgents: cfg.customAgents } : {}),
-                        ...(cfg.coreMemory ? { systemMessage: { mode: "append" as const, content: `\n\n<tower-core-memory>\n${cfg.coreMemory}\n</tower-core-memory>` } } : {}),
+                        ...(cfg.systemPromptContent ? { systemMessage: { mode: "append" as const, content: `\n\n${cfg.systemPromptContent}` } } : {}),
                     });
                     const policy = buildSessionPolicy(session.sessionId, mode, allow, deny);
                     handler = policy.handler;
@@ -186,7 +186,7 @@ export function handleConnection(ws: WebSocket, remote: string, router: Router |
                             ...(cfg.skillDirectories.length > 0 ? { skillDirectories: cfg.skillDirectories } : {}),
                             ...(cfg.disabledSkills.length > 0 ? { disabledSkills: cfg.disabledSkills } : {}),
                             ...(cfg.customAgents.length > 0 ? { customAgents: cfg.customAgents } : {}),
-                            ...(cfg.coreMemory ? { systemMessage: { mode: "append" as const, content: `\n\n<tower-core-memory>\n${cfg.coreMemory}\n</tower-core-memory>` } } : {}),
+                            ...(cfg.systemPromptContent ? { systemMessage: { mode: "append" as const, content: `\n\n${cfg.systemPromptContent}` } } : {}),
                         });
                         policy = buildSessionPolicy(msg.sessionId, mode, allow, deny);
                         handler = policy.handler;

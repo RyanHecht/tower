@@ -27,29 +27,29 @@ sections to keep them current and concise.
 
 ### Reading core memory
 ```
-tower_core_read()              — read all sections
-tower_core_read(section:"user") — read one section
+tower_vault_list(path: "_core")         — list core memory files
+tower_vault_read(path: "_core/user.md") — read one section
 ```
 
 ### Updating core memory (self-editing)
 ```
-tower_core_update(
-  section: "user",
+tower_vault_write(
+  path: "_core/user.md",
   content: "# User\n\n- Name: Ryan\n- Prefers TypeScript\n- Lives in Orlando"
 )
 ```
 
-**IMPORTANT:** `tower_core_update` REPLACES the entire section. Read it
+**IMPORTANT:** `tower_vault_write` REPLACES the entire file. Read it
 first, incorporate changes, then write the updated version. Don't lose
 existing facts.
 
 ## Archival Memory (searched on demand)
 
-For everything beyond core memory, use `tower_remember` to store facts
+For everything beyond core memory, use `tower_vault_remember` to store facts
 in topic-organized files:
 
 ```
-tower_remember(
+tower_vault_remember(
   fact: "Bob was promoted to VP in April 2026",
   topic: "people/bob"
 )
@@ -64,7 +64,7 @@ create the file structure organically:
 ## Recalling Information
 
 ```
-tower_recall(query: "Bob's role")
+tower_vault_search(query: "Bob's role")
 ```
 
 Searches across all vault files (core memory, archival memory, session
@@ -110,4 +110,4 @@ Every write is auto-committed. The user can:
   in "general"
 - When you learn a correction ("actually, Bob is a VP now, not a
   chemist"), UPDATE the existing fact rather than appending alongside it
-- Check `tower_recall` before storing — avoid duplicates
+- Check `tower_vault_search` before storing — avoid duplicates

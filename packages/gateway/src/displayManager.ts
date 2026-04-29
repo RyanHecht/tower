@@ -38,6 +38,7 @@ const displays = new Map<string, DisplayEntry>();
 
 export interface DisplayInfo {
     sessionId: string;
+    displayNum: number;
     display: string;
     vncPort: number;
     /** Relative URL path for the noVNC viewer. */
@@ -160,9 +161,17 @@ export async function destroyAllDisplays(): Promise<void> {
     await Promise.all(ids.map(destroyDisplay));
 }
 
+/** Register an externally-spawned process (e.g., browser, terminal) with
+ *  a session's display so it gets cleaned up on destroyDisplay. */
+export function registerProcess(sessionId: string, proc: ChildProcess): void {
+    const entry = displays.get(sessionId);
+    if (entry) entry.procs.push(proc);
+}
+
 function toInfo(entry: DisplayEntry): DisplayInfo {
     return {
         sessionId: entry.sessionId,
+        displayNum: entry.displayNum,
         display: entry.display,
         vncPort: entry.vncPort,
         noVncUrl: `/display/${entry.sessionId}/`,

@@ -24,6 +24,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 #   x11vnc     — VNC server attached to Xvfb
 #   fluxbox    — minimal window manager
 #   xdotool    — X11 automation (click, type, window management)
+#   xterm      — terminal emulator for TUI applications on the display
 #
 # Browser:
 #   chromium           — headed browser for web automation
@@ -36,7 +37,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         bash ca-certificates curl netcat-openbsd git \
-        xvfb x11vnc fluxbox xdotool \
+        xvfb x11vnc fluxbox xdotool xterm \
         chromium chromium-sandbox fonts-liberation fonts-noto-color-emoji \
         scrot \
         python3 python3-websockify \
