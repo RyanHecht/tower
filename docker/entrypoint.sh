@@ -39,7 +39,6 @@ echo "[entrypoint]   log:        $DAEMON_LOG"
 copilot \
     --headless \
     --port "$DAEMON_PORT" \
-    --config-dir "$COPILOT_HOME" \
     --plugin-dir "$PROJECT_ROOT/plugins" \
     --add-dir "$PROJECT_ROOT/workspaces" \
     --log-dir "$PROJECT_ROOT/logs" \
