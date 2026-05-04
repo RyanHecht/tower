@@ -4,7 +4,7 @@
 # container. The daemon runs against an isolated $COPILOT_HOME so its
 # sessions/auth never mix with the host user's ~/.copilot.
 #
-FROM node:20-bookworm-slim
+FROM node:24-bookworm-slim
 
 ARG UID=1000
 ARG GID=1000
