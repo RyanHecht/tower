@@ -87,6 +87,78 @@ container, and that path is mounted from the named volume
 - Bind mounts under `./data`, `./logs`, `./workspaces`, `./plugins` keep
   tokens, logs, agent file edits, and plugins inspectable from the host.
 
+### Remote / homelab deployment
+
+Tower's `docker-compose.yml` also works as a standalone deployment target.
+For a server behind a reverse proxy (Traefik, Caddy, nginx), the key
+differences from local dev are:
+
+1. **Don't bind to `127.0.0.1`** — let the reverse proxy reach the gateway.
+   Remove the host-IP prefix from the ports mapping, or use Traefik labels
+   and a shared Docker network instead of publishing ports directly.
+
+2. **Use TLS** — surfaces connect via `wss://` and `https://`. Let your
+   reverse proxy terminate TLS (Cloudflare Tunnel, Let's Encrypt, etc.).
+
+3. **Persistent storage** — point the bind mounts at durable paths (e.g.,
+   ZFS datasets, NFS shares) instead of the local checkout.
+
+4. **Auth token** — set `COPILOT_GITHUB_TOKEN` in the environment, or run
+   `docker exec -it tower copilot auth` after first start.
+
+Example compose snippet for Traefik:
+
+```yaml
+services:
+  tower:
+    build:
+      context: .           # or point at a git checkout
+      args:
+        UID: 1000
+        GID: 1000
+    image: tower:latest
+    container_name: tower
+    restart: unless-stopped
+    shm_size: "2g"
+    environment:
+      PROJECT_ROOT: /tower
+      GATEWAY_HOST: 0.0.0.0
+      GATEWAY_PORT: 8787
+      COPILOT_GITHUB_TOKEN: ${COPILOT_GITHUB_TOKEN:-}
+    volumes:
+      - tower-copilot-home:/home/tower/.copilot
+      - /path/to/data:/tower/data
+      - /path/to/logs:/tower/logs
+      - /path/to/workspaces:/tower/workspaces
+      - /path/to/plugins:/tower/plugins
+    networks:
+      - proxy
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.tower.rule: "Host(`tower.example.com`)"
+      traefik.http.routers.tower.entrypoints: "websecure"
+      traefik.http.services.tower.loadbalancer.server.port: "8787"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "8787"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  tower-copilot-home:
+
+networks:
+  proxy:
+    external: true
+```
+
+Then connect from anywhere:
+
+```sh
+TOWER_URL=wss://tower.example.com TOWER_TOKEN=<token> npm run tui
+```
+
 ## TUI
 
 The terminal client is an OpenTUI/React app styled after Copilot CLI. Run it
