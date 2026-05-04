@@ -61,9 +61,32 @@ trap cleanup EXIT
 # Wait for the daemon to listen. ~30 retries * 0.5s = 15s ceiling.
 for i in $(seq 1 30); do
     if ! kill -0 "$DAEMON_PID" 2>/dev/null; then
-        echo "[entrypoint] daemon exited before listening; tail of $DAEMON_LOG:" >&2
-        tail -n 50 "$DAEMON_LOG" >&2 || true
-        exit 1
+        echo ""
+        echo "╔══════════════════════════════════════════════════════════════════╗"
+        echo "║              COPILOT DAEMON FAILED TO START                     ║"
+        echo "╠══════════════════════════════════════════════════════════════════╣"
+        echo "║                                                                 ║"
+        echo "║  The daemon exited before it could listen on port $DAEMON_PORT.        ║"
+        echo "║  This usually means GitHub authentication is missing or expired.║"
+        echo "║                                                                 ║"
+        echo "║  OPTION 1 — Device-flow login (interactive):                    ║"
+        echo "║    docker exec -it tower copilot auth                           ║"
+        echo "║                                                                 ║"
+        echo "║  OPTION 2 — Set a token in stack.env:                           ║"
+        echo "║    COPILOT_GITHUB_TOKEN=<your-token>                            ║"
+        echo "║    Then redeploy the stack.                                     ║"
+        echo "║                                                                 ║"
+        echo "║  Daemon log tail:                                               ║"
+        echo "╚══════════════════════════════════════════════════════════════════╝"
+        echo ""
+        tail -n 50 "$DAEMON_LOG" 2>/dev/null || echo "  (log is empty)"
+        echo ""
+        echo "[entrypoint] waiting for auth — container will stay running."
+        echo "[entrypoint] after authenticating, restart the container."
+        echo ""
+        # Keep the container alive so `docker exec` works.
+        trap 'exit 0' TERM INT
+        while true; do sleep 60; done
     fi
     if nc -z "$DAEMON_HOST" "$DAEMON_PORT" 2>/dev/null; then
         echo "[entrypoint] daemon up after ${i} probe(s)"
@@ -75,7 +98,11 @@ done
 if ! nc -z "$DAEMON_HOST" "$DAEMON_PORT" 2>/dev/null; then
     echo "[entrypoint] daemon never came up on ${DAEMON_HOST}:${DAEMON_PORT}" >&2
     tail -n 50 "$DAEMON_LOG" >&2 || true
-    exit 1
+    echo ""
+    echo "[entrypoint] waiting — container will stay running so you can debug."
+    echo "[entrypoint] restart the container after fixing the issue."
+    trap 'exit 0' TERM INT
+    while true; do sleep 60; done
 fi
 
 echo "[entrypoint] launching gateway on ${GATEWAY_HOST}:${GATEWAY_PORT}"
