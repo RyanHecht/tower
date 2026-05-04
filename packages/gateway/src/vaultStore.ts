@@ -75,6 +75,7 @@ export async function initVault(): Promise<void> {
     await mkdir(join(MEMORY_DIR, "sessions"), { recursive: true });
     await mkdir(join(VAULT, "projects"), { recursive: true });
     await mkdir(INBOX_DIR, { recursive: true });
+    await mkdir(join(VAULT, "skills"), { recursive: true });
 
     // Seed core memory files if they don't exist.
     await seedFile(join(CORE_DIR, "user.md"),
@@ -377,6 +378,8 @@ const DEFAULT_SCHEMA = `# Vault Schema
 - \`_memory/people/\` — per-person profiles
 - \`_memory/sessions/\` — session summaries
 - \`inbox/\` — unprocessed source items (immutable, never edit these)
+- \`skills/\` — user-created skills (each skill is a subdirectory with a SKILL.md)
+  - Automatically loaded by new sessions. Create skills here to add capabilities.
 
 ## Conventions
 - Filenames: lowercase, hyphens, date-prefixed where temporal

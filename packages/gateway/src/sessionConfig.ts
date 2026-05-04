@@ -150,7 +150,17 @@ Proactive behavior:
 using tower_vault_remember (quick facts) or tower_vault_append/tower_vault_write \
 (structured updates). Follow the vault schema below for where things go.
 - Core memory (_core/) is injected into every session's system prompt. Keep it \
-concise and current — rewrite sections rather than appending.`;
+concise and current — rewrite sections rather than appending.
+
+Creating skills at runtime:
+- You can create new skills by writing a SKILL.md file to the vault's skills/ \
+directory: tower_vault_write(path: "skills/<name>/SKILL.md", content: "---\\nname: ...\\n---\\n...")
+- Skills created in the vault are automatically loaded by new sessions.
+- When the user asks you to add a new capability, workflow, or behavioral pattern, \
+create it as a skill. This makes the behavior persistent, reusable across sessions, \
+and editable by the user.
+- A SKILL.md file needs YAML frontmatter (name, description) followed by markdown \
+instructions that teach the agent how to perform the skill.`;
 
 const SCHEMA_TOKEN_BUDGET = 2000;
 
@@ -196,6 +206,8 @@ export async function buildSessionConfig(sessionId: string, store: StateStore, k
     const skillDirectories: string[] = [
         // Built-in Tower skills (browser, etc.)
         `${config.root}/skills`,
+        // User-created skills in the vault (agent can create these at runtime).
+        `${config.paths.vault}/skills`,
         ...(userConfig.skillDirectories ?? []),
     ];
 
