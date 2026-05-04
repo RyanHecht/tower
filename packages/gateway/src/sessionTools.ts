@@ -12,6 +12,7 @@ import * as messages from "./messageStore.js";
 import * as vault from "./vaultStore.js";
 import { headlessSend } from "./headlessSend.js";
 import type { KeepAliveManager } from "./keepAlive.js";
+import type { CronScheduler } from "./crons.js";
 import { getCopilotClient } from "./copilot.js";
 import { attachedSessions } from "./attached.js";
 import * as T from "./toolNames.js";
@@ -26,7 +27,7 @@ export { flushToShared } from "./chromiumProfile.js";
  * gateway-managed resources like the display manager.
  */
 
-export function buildSessionTools(store: StateStore, keepAlive: KeepAliveManager): Tool[] {
+export function buildSessionTools(store: StateStore, keepAlive: KeepAliveManager, crons: CronScheduler): Tool[] {
     return [
         // ── Display tools ──────────────────────────────────────────────
         {
@@ -691,6 +692,128 @@ export function buildSessionTools(store: StateStore, keepAlive: KeepAliveManager
                 } catch (err) {
                     return { status: "error", message: (err as Error).message };
                 }
+            },
+        },
+
+        // ── Cron scheduling ────────────────────────────────────────────
+
+        {
+            name: T.TOWER_CRON_CREATE,
+            description:
+                "Schedule a recurring prompt on a session. The prompt is sent " +
+                "headlessly on the cron schedule (standard 5-field cron expression). " +
+                "Use this to set up periodic tasks like checking for updates, " +
+                "generating daily briefs, or polling external data sources. " +
+                "If no sessionId is provided, the cron runs on the current session.",
+            parameters: {
+                type: "object",
+                properties: {
+                    schedule: {
+                        type: "string",
+                        description:
+                            "Cron expression (5-field). Examples: '0 9 * * *' (daily at 9am), " +
+                            "'*/30 * * * *' (every 30 min), '0 */4 * * *' (every 4 hours).",
+                    },
+                    prompt: {
+                        type: "string",
+                        description: "The prompt to send on each scheduled run.",
+                    },
+                    sessionId: {
+                        type: "string",
+                        description: "Session to send the prompt to. Defaults to the current session.",
+                    },
+                },
+                required: ["schedule", "prompt"],
+            },
+            handler: async (args: unknown, invocation) => {
+                const a = args as { schedule: string; prompt: string; sessionId?: string };
+                try {
+                    const targetSession = a.sessionId ?? invocation.sessionId;
+                    const job = crons.create(targetSession, a.schedule, a.prompt);
+                    return {
+                        status: "ok",
+                        cronId: job.id,
+                        sessionId: targetSession,
+                        schedule: job.schedule,
+                        prompt: job.prompt,
+                    };
+                } catch (err) {
+                    return { status: "error", message: (err as Error).message };
+                }
+            },
+        },
+        {
+            name: T.TOWER_CRON_LIST,
+            description:
+                "List all scheduled cron jobs on this Tower instance. Shows each " +
+                "job's ID, schedule, target session, prompt, and whether it's enabled.",
+            parameters: {
+                type: "object",
+                properties: {},
+            },
+            handler: async () => {
+                const jobs = crons.list();
+                return {
+                    status: "ok",
+                    count: jobs.length,
+                    jobs: jobs.map((j) => ({
+                        cronId: j.id,
+                        sessionId: j.sessionId,
+                        schedule: j.schedule,
+                        prompt: j.prompt,
+                        enabled: j.enabled,
+                        lastRunAt: j.lastRunAt,
+                        failCount: j.failCount,
+                    })),
+                };
+            },
+        },
+        {
+            name: T.TOWER_CRON_UPDATE,
+            description:
+                "Update a cron job's schedule, prompt, target session, or enabled state. " +
+                "Re-enabling a job resets its failure counter.",
+            parameters: {
+                type: "object",
+                properties: {
+                    cronId: { type: "string", description: "The cron job ID." },
+                    schedule: { type: "string", description: "New cron expression (optional)." },
+                    prompt: { type: "string", description: "New prompt (optional)." },
+                    sessionId: { type: "string", description: "New target session (optional)." },
+                    enabled: { type: "boolean", description: "Enable or disable the job (optional)." },
+                },
+                required: ["cronId"],
+            },
+            handler: async (args: unknown) => {
+                const a = args as { cronId: string; schedule?: string; prompt?: string; sessionId?: string; enabled?: boolean };
+                try {
+                    const job = crons.update(a.cronId, {
+                        schedule: a.schedule,
+                        prompt: a.prompt,
+                        sessionId: a.sessionId,
+                        enabled: a.enabled,
+                    });
+                    return { status: "ok", cronId: job.id, schedule: job.schedule, enabled: job.enabled };
+                } catch (err) {
+                    return { status: "error", message: (err as Error).message };
+                }
+            },
+        },
+        {
+            name: T.TOWER_CRON_DELETE,
+            description: "Delete a scheduled cron job.",
+            parameters: {
+                type: "object",
+                properties: {
+                    cronId: { type: "string", description: "The cron job ID to delete." },
+                },
+                required: ["cronId"],
+            },
+            handler: async (args: unknown) => {
+                const a = args as { cronId: string };
+                const deleted = crons.delete(a.cronId);
+                if (!deleted) return { status: "error", message: `cron not found: ${a.cronId}` };
+                return { status: "ok", deleted: true, cronId: a.cronId };
             },
         },
     ];

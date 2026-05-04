@@ -5,6 +5,7 @@ import { buildSessionTools } from "./sessionTools.js";
 import { readCoreMemory, readSchema } from "./vaultStore.js";
 import type { StateStore } from "./state.js";
 import type { KeepAliveManager } from "./keepAlive.js";
+import type { CronScheduler } from "./crons.js";
 
 /**
  * Session configuration layer.
@@ -142,6 +143,7 @@ persists even when the user disconnects — you keep working. You have access to
 - **Vault** (tower_vault_*) — persistent knowledge base. Read, write, append, list, and search files.
 - **Vault inbox** (tower_vault_inbox_*) — external data awaiting triage/processing.
 - **Messaging** (tower_msg_*) — send/receive messages between sessions on this host.
+- **Crons** (tower_cron_*) — schedule recurring prompts on any session (periodic tasks, polling, briefs).
 - **Display** (tower_display_*) — virtual desktop with headed browser and terminal.
 - **Sessions** (tower_session_list) — discover other sessions on this host.
 
@@ -197,7 +199,7 @@ async function buildSystemPrompt(): Promise<string> {
  * Call this right before `client.createSession()` / `client.resumeSession()`
  * and spread the result into the SDK config.
  */
-export async function buildSessionConfig(sessionId: string, store: StateStore, keepAlive: KeepAliveManager): Promise<SessionConfigBundle> {
+export async function buildSessionConfig(sessionId: string, store: StateStore, keepAlive: KeepAliveManager, crons: CronScheduler): Promise<SessionConfigBundle> {
     const mcpServers: Record<string, MCPServerConfig> = {
         ...builtinMcpServers(sessionId),
         ...userConfig.mcpServers,
@@ -219,7 +221,7 @@ export async function buildSessionConfig(sessionId: string, store: StateStore, k
         ...(userConfig.customAgents ?? []),
     ];
 
-    const tools: Tool[] = buildSessionTools(store, keepAlive);
+    const tools: Tool[] = buildSessionTools(store, keepAlive, crons);
     const systemPromptContent = await buildSystemPrompt();
 
     return { mcpServers, skillDirectories, disabledSkills, customAgents, tools, systemPromptContent };

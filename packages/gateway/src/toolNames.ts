@@ -32,5 +32,11 @@ export const TOWER_DISPLAY_DESTROY = "tower_display_destroy";
 export const TOWER_DISPLAY_BROWSER = "tower_display_browser";
 export const TOWER_DISPLAY_TERMINAL = "tower_display_terminal";
 
+// ── Crons ──────────────────────────────────────────────────────────────
+export const TOWER_CRON_CREATE = "tower_cron_create";
+export const TOWER_CRON_LIST = "tower_cron_list";
+export const TOWER_CRON_UPDATE = "tower_cron_update";
+export const TOWER_CRON_DELETE = "tower_cron_delete";
+
 // ── Sessions ───────────────────────────────────────────────────────────
 export const TOWER_SESSION_LIST = "tower_session_list";
