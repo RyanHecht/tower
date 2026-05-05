@@ -70,7 +70,7 @@ for i in $(seq 1 30); do
         echo "║  This usually means GitHub authentication is missing or expired.║"
         echo "║                                                                 ║"
         echo "║  OPTION 1 — Device-flow login (interactive):                    ║"
-        echo "║    docker exec -it tower copilot auth                           ║"
+        echo "║    docker exec -it tower copilot login                          ║"
         echo "║                                                                 ║"
         echo "║  OPTION 2 — Set a token in stack.env:                           ║"
         echo "║    COPILOT_GITHUB_TOKEN=<your-token>                            ║"

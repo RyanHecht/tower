@@ -104,7 +104,7 @@ differences from local dev are:
    ZFS datasets, NFS shares) instead of the local checkout.
 
 4. **Auth token** — set `COPILOT_GITHUB_TOKEN` in the environment, or run
-   `docker exec -it tower copilot auth` after first start.
+   `docker exec -it tower copilot login` after first start.
 
 Example compose snippet for Traefik:
 
