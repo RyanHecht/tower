@@ -100,8 +100,6 @@ RUN npm run build
 # can mkdir under bind mounts at runtime.
 RUN chown -R tower:tower /tower /home/tower
 
-USER tower
-
 ENV PROJECT_ROOT=/tower \
     GATEWAY_HOST=0.0.0.0 \
     GATEWAY_PORT=8787 \
